@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Treatment Rooms</title><link rel="stylesheet" href="../css/styles.css"></head>
+<body><div class="container"><h2>Treatment Referrals</h2><table id="treatments"></table></div>
+<script src="../js/config.js"></script>
+<script type="module">
+import { apiRequest } from "../js/api.js";
+import { renderTable } from "../js/render.js";
+const data = await apiRequest("/treatment-referrals/");
+renderTable("treatments", data.results || [], [
+  { label: "ID", render: (x) => x.id },
+  { label: "Patient", render: (x) => x.patient },
+  { label: "Room", render: (x) => x.room },
+  { label: "Service", render: (x) => x.service_name },
+  { label: "Status", render: (x) => x.status },
+]);
+</script></body></html>

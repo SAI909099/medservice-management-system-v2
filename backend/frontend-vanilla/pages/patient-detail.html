@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Patient Detail</title><link rel="stylesheet" href="../css/styles.css"></head>
+<body><div class="container"><h2>Patient Detail</h2><div id="patient" class="panel"></div><h3>Visit History</h3><table id="visits"></table></div>
+<script src="../js/config.js"></script>
+<script type="module">
+import { apiRequest } from "../js/api.js";
+import { renderTable } from "../js/render.js";
+const id = new URLSearchParams(location.search).get("id");
+if (id) {
+  const p = await apiRequest(`/patients/${id}/`);
+  document.getElementById("patient").textContent = `${p.first_name} ${p.last_name} | ${p.phone || ""}`;
+  const visits = await apiRequest(`/patients/${id}/visits/`);
+  renderTable("visits", visits.results || visits, [
+    { label: "Date", render: (x) => x.scheduled_at },
+    { label: "Doctor", render: (x) => x.doctor_name || "" },
+    { label: "Status", render: (x) => x.status },
+  ]);
+}
+</script></body></html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Patients</title><link rel="stylesheet" href="../css/styles.css"></head>
+<body><div class="container"><h2>Patients</h2><div class="row"><input id="q" placeholder="Search"><button id="searchBtn">Search</button></div><table id="patientsTable"></table></div>
+<script src="../js/config.js"></script>
+<script type="module">
+import { apiRequest } from "../js/api.js";
+import { renderTable } from "../js/render.js";
+async function loadPatients() {
+  const q = document.getElementById("q").value;
+  const data = await apiRequest(`/patients/?search=${encodeURIComponent(q)}`);
+  renderTable("patientsTable", data.results || [], [
+    { label: "ID", render: (x) => x.id },
+    { label: "Name", render: (x) => `${x.first_name} ${x.last_name}` },
+    { label: "Phone", render: (x) => x.phone || "" },
+    { label: "Detail", render: (x) => `<a href='./patient-detail.html?id=${x.id}'>Open</a>` },
+  ]);
+}
+document.getElementById("searchBtn").onclick = loadPatients;
+loadPatients();
+</script></body></html>

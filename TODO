@@ -1,0 +1,11 @@
+Read AGENTS.md first.
+
+Task:
+[bu yerga aniq task yoziladi]
+
+Requirements:
+- follow docs/ as source of truth
+- keep architecture modular
+- do not break existing workflow
+- update only the necessary files
+- explain changes clearly

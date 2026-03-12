@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Dashboard</title><link rel="stylesheet" href="../css/styles.css"></head>
+<body><div class="container"><h2>Dashboard</h2><div id="me" class="panel"></div><div class="row"><a href="patients.html">Patients</a><a href="appointments.html">Appointments</a><a href="laboratory.html">Laboratory</a><a href="billing.html">Billing</a><a href="reports.html">Reports</a></div></div>
+<script src="../js/config.js"></script>
+<script type="module">
+import { apiRequest } from "../js/api.js";
+const me = await apiRequest("/auth/me/");
+document.getElementById("me").textContent = `User: ${me.username} | Role: ${me.role?.name || "-"}`;
+</script></body></html>

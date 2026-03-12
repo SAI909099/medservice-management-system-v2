@@ -1,0 +1,18 @@
+<!doctype html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Doctor Worklist</title><link rel="stylesheet" href="../css/styles.css"></head>
+<body><div class="container"><h2>Doctor Worklist</h2><div class="row"><input id="doctorId" placeholder="Doctor ID"><button id="loadBtn">Load</button></div><table id="worklist"></table></div>
+<script src="../js/config.js"></script>
+<script type="module">
+import { apiRequest } from "../js/api.js";
+import { renderTable } from "../js/render.js";
+document.getElementById("loadBtn").onclick = async () => {
+  const id = document.getElementById("doctorId").value;
+  const data = await apiRequest(`/doctors/${id}/worklist/`);
+  renderTable("worklist", data, [
+    { label: "Appointment", render: (x) => x.appointment_id },
+    { label: "Patient", render: (x) => x.patient },
+    { label: "Date", render: (x) => x.scheduled_at },
+    { label: "Status", render: (x) => x.status },
+  ]);
+};
+</script></body></html>
