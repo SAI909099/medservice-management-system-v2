@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from django.utils import timezone
+from datetime import datetime
 
 from .models import TreatmentArea, TreatmentReferral, TreatmentRoom
 from .services import prepare_area_payload, prepare_room_payload
@@ -85,6 +87,7 @@ class TreatmentRoomSerializer(serializers.ModelSerializer):
             patients.append(
                 {
                     "id": patient.id,
+                    "referral_id": referral.id,
                     "first_name": patient.first_name,
                     "last_name": patient.last_name,
                     "full_name": full_name,
@@ -95,7 +98,23 @@ class TreatmentRoomSerializer(serializers.ModelSerializer):
 
 class TreatmentReferralSerializer(serializers.ModelSerializer):
     room_name = serializers.CharField(source="room.name", read_only=True)
+    assigned_date = serializers.DateField(write_only=True, required=False)
 
     class Meta:
         model = TreatmentReferral
         fields = "__all__"
+
+    def create(self, validated_data):
+        assigned_date = validated_data.pop("assigned_date", None)
+        referral = super().create(validated_data)
+        if assigned_date:
+            current_local_time = timezone.localtime().time().replace(microsecond=0)
+            assigned_dt = timezone.make_aware(datetime.combine(assigned_date, current_local_time), timezone.get_current_timezone())
+            referral.created_at = assigned_dt
+            referral.save(update_fields=["created_at"])
+        if referral.status == TreatmentReferral.Status.IN_PROGRESS:
+            from billing.services import create_treatment_charges_for_referral_period
+
+            start_date = assigned_date or timezone.localdate()
+            create_treatment_charges_for_referral_period(referral, start_date=start_date, end_date=timezone.localdate())
+        return referral

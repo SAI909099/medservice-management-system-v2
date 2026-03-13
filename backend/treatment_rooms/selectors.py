@@ -1,5 +1,7 @@
 from django.db.models import Count, Prefetch, Q, QuerySet
 
+from patients.models import Patient
+
 from .models import TreatmentArea, TreatmentReferral, TreatmentRoom
 
 
@@ -48,3 +50,15 @@ def get_treatment_room_queryset(user) -> QuerySet:
 def get_treatment_referral_queryset(user) -> QuerySet:
     queryset = TreatmentReferral.objects.select_related("patient", "doctor__user", "room", "room__clinic", "room__branch").all()
     return _scoped_queryset(queryset, user, clinic_field="room__clinic_id", branch_field="room__branch_id")
+
+
+def get_treatment_patient_options_queryset(user, search: str | None = None) -> QuerySet:
+    queryset = Patient.objects.order_by("-created_at")
+    queryset = _scoped_queryset(queryset, user)
+    if search:
+        queryset = queryset.filter(
+            Q(first_name__icontains=search)
+            | Q(last_name__icontains=search)
+            | Q(phone__icontains=search)
+        )
+    return queryset

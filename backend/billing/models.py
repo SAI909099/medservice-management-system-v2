@@ -22,6 +22,13 @@ class Charge(models.Model):
 
     patient = models.ForeignKey("patients.Patient", on_delete=models.CASCADE, related_name="charges")
     appointment = models.ForeignKey("appointments.Appointment", on_delete=models.SET_NULL, null=True, blank=True, related_name="charges")
+    treatment_referral = models.ForeignKey(
+        "treatment_rooms.TreatmentReferral",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="charges",
+    )
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.UNPAID)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))

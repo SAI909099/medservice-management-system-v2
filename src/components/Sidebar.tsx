@@ -12,6 +12,8 @@ const navigation = [
   { name: 'Laboratoriya', to: '/lab', icon: Droplet, pageCode: 'lab' },
   { name: 'Davolash xonasi', to: '/treatment', icon: HeartPulse, pageCode: 'treatment' },
   { name: "Xonalar ro'yxati", to: '/rooms', icon: BedDouble, pageCode: 'treatment' },
+  { name: "Yotoq to'lovlari", to: '/treatment-billing', icon: CreditCard, pageCode: 'treatment' },
+  { name: 'Kassa', to: '/cash-register', icon: CreditCard, pageCode: 'billing' },
   { name: "To'lovlar", to: '/billing', icon: CreditCard, pageCode: 'billing' },
   { name: 'Xizmat narxlari', to: '/pricing', icon: FileText, pageCode: 'pricing' },
   { name: 'Hisobotlar', to: '/reports', icon: FileText, pageCode: 'reports' },

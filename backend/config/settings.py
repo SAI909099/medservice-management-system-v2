@@ -7,6 +7,10 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+
+def env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-dev-secret")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()]
@@ -123,3 +127,8 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
 }
+
+# Treatment room daily charge scheduler (used by management command)
+TREATMENT_DAILY_CHARGE_ENABLED = env_bool("TREATMENT_DAILY_CHARGE_ENABLED", True)
+TREATMENT_DAILY_CHARGE_HOUR = int(os.getenv("TREATMENT_DAILY_CHARGE_HOUR", "12"))
+TREATMENT_DAILY_CHARGE_MINUTE = int(os.getenv("TREATMENT_DAILY_CHARGE_MINUTE", "0"))

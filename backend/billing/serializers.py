@@ -3,7 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from .models import Charge, ChargeItem, Payment, Receipt, Service
-from .services import recalculate_charge
+from .services import recalculate_charge, record_payment
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -44,6 +44,7 @@ class ChargeSerializer(serializers.ModelSerializer):
             "id",
             "patient",
             "appointment",
+            "treatment_referral",
             "status",
             "total_amount",
             "paid_amount",
@@ -52,6 +53,10 @@ class ChargeSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["status", "total_amount", "created_at"]
+        extra_kwargs = {
+            "appointment": {"required": False, "allow_null": True},
+            "treatment_referral": {"required": False, "allow_null": True},
+        }
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])
@@ -78,16 +83,13 @@ class PaymentSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def create(self, validated_data):
-        payment = super().create(validated_data)
-        charge = payment.charge
-        charge.paid_amount += payment.amount
-        charge.save(update_fields=["paid_amount"])
-        recalculate_charge(charge)
-        Receipt.objects.get_or_create(
-            payment=payment,
-            defaults={"receipt_no": f"RCP-{payment.id:06d}"},
+        charge = validated_data["charge"]
+        return record_payment(
+            charge=charge,
+            amount=validated_data["amount"],
+            payment_method=validated_data["payment_method"],
+            note=validated_data.get("note", ""),
         )
-        return payment
 
 
 class ReceiptSerializer(serializers.ModelSerializer):

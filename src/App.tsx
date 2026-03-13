@@ -14,6 +14,8 @@ import { UsersSettings } from './pages/UsersSettings';
 import React from 'react';
 import { Pricing } from './pages/Pricing';
 import { RoomsList } from './pages/RoomsList';
+import { TreatmentRoomBilling } from './pages/TreatmentRoomBilling';
+import { CashRegister } from './pages/CashRegister';
 
 // Mock empty pages for links in sidebar
 function ComingSoon({ title }: { title: string }) {
@@ -101,6 +103,8 @@ function App() {
           <Route path="lab" element={<ProtectedPage pageCode="lab" element={<Laboratory />} />} />
           <Route path="treatment" element={<ProtectedPage pageCode="treatment" element={<TreatmentRooms />} />} />
           <Route path="rooms" element={<ProtectedPage pageCode="treatment" element={<RoomsList />} />} />
+          <Route path="treatment-billing" element={<ProtectedPage pageCode="treatment" element={<TreatmentRoomBilling />} />} />
+          <Route path="cash-register" element={<ProtectedPage pageCode="billing" element={<CashRegister />} />} />
           <Route path="billing" element={<ProtectedPage pageCode="billing" element={<Billing />} />} />
           <Route path="pricing" element={<ProtectedPage pageCode="pricing" element={<Pricing />} />} />
           <Route path="reports" element={<ProtectedPage pageCode="reports" element={<Reports />} />} />

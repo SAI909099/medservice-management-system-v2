@@ -24,6 +24,8 @@ type StaffOptionsResponse = {
 type AppointmentItem = {
   id: number;
   patient_name: string;
+  patient_gender: string;
+  patient_date_of_birth: string | null;
   doctor_name: string;
   scheduled_at: string;
   status: string;
@@ -32,6 +34,8 @@ type AppointmentItem = {
 type RegistrationForm = {
   first_name: string;
   last_name: string;
+  gender: string;
+  date_of_birth: string;
   age: string;
   phone: string;
   address: string;
@@ -55,6 +59,8 @@ export function Appointments() {
   const [form, setForm] = useState<RegistrationForm>({
     first_name: '',
     last_name: '',
+    gender: '',
+    date_of_birth: '',
     age: '',
     phone: '',
     address: '',
@@ -112,6 +118,8 @@ export function Appointments() {
         body: JSON.stringify({
           first_name: form.first_name,
           last_name: form.last_name,
+          gender: form.gender,
+          date_of_birth: form.date_of_birth || null,
           age: form.age ? Number(form.age) : null,
           phone: form.phone,
           address: form.address,
@@ -156,6 +164,8 @@ export function Appointments() {
       setForm({
         first_name: '',
         last_name: '',
+        gender: '',
+        date_of_birth: '',
         age: '',
         phone: '',
         address: '',
@@ -181,6 +191,12 @@ export function Appointments() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input className="border rounded px-3 py-2" placeholder="Ism" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
           <input className="border rounded px-3 py-2" placeholder="Familiya" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
+          <select className="border rounded px-3 py-2" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} required>
+            <option value="">Jinsini tanlang</option>
+            <option value="erkak">Erkak</option>
+            <option value="ayol">Ayol</option>
+          </select>
+          <input className="border rounded px-3 py-2" type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} />
           <input className="border rounded px-3 py-2" type="number" min={0} placeholder="Yosh" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
           <input className="border rounded px-3 py-2" placeholder="Telefon raqam" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
           <input className="border rounded px-3 py-2 md:col-span-2" placeholder="Manzil" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
@@ -223,6 +239,8 @@ export function Appointments() {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-sm font-semibold">Bemor</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold">Jinsi</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold">Tug'ilgan sana</th>
               <th className="px-4 py-3 text-left text-sm font-semibold">Shifokor</th>
               <th className="px-4 py-3 text-left text-sm font-semibold">Sana</th>
               <th className="px-4 py-3 text-left text-sm font-semibold">Holat</th>
@@ -232,6 +250,8 @@ export function Appointments() {
             {appointments.map((a) => (
               <tr key={a.id}>
                 <td className="px-4 py-3 text-sm">{a.patient_name}</td>
+                <td className="px-4 py-3 text-sm">{a.patient_gender || '-'}</td>
+                <td className="px-4 py-3 text-sm">{a.patient_date_of_birth ? new Date(a.patient_date_of_birth).toLocaleDateString() : '-'}</td>
                 <td className="px-4 py-3 text-sm">{a.doctor_name}</td>
                 <td className="px-4 py-3 text-sm">{new Date(a.scheduled_at).toLocaleString()}</td>
                 <td className="px-4 py-3 text-sm">{a.status}</td>

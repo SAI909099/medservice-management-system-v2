@@ -6,6 +6,8 @@ from .services import validate_appointment_datetime
 
 class AppointmentSerializer(serializers.ModelSerializer):
     patient_name = serializers.SerializerMethodField(read_only=True)
+    patient_gender = serializers.CharField(source="patient.gender", read_only=True)
+    patient_date_of_birth = serializers.DateField(source="patient.date_of_birth", read_only=True)
     doctor_name = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -14,6 +16,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "id",
             "patient",
             "patient_name",
+            "patient_gender",
+            "patient_date_of_birth",
             "doctor",
             "doctor_name",
             "scheduled_at",
