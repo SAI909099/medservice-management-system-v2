@@ -16,6 +16,8 @@ import { Pricing } from './pages/Pricing';
 import { RoomsList } from './pages/RoomsList';
 import { TreatmentRoomBilling } from './pages/TreatmentRoomBilling';
 import { CashRegister } from './pages/CashRegister';
+import { Accountant } from './pages/Accountant';
+import { IncomeAnalytics } from './pages/IncomeAnalytics';
 
 // Mock empty pages for links in sidebar
 function ComingSoon({ title }: { title: string }) {
@@ -107,6 +109,8 @@ function App() {
           <Route path="cash-register" element={<ProtectedPage pageCode="billing" element={<CashRegister />} />} />
           <Route path="billing" element={<ProtectedPage pageCode="billing" element={<Billing />} />} />
           <Route path="pricing" element={<ProtectedPage pageCode="pricing" element={<Pricing />} />} />
+          <Route path="accountant" element={<ProtectedPage pageCode="reports" element={<Accountant />} />} />
+          <Route path="income" element={<ProtectedPage pageCode="reports" element={<IncomeAnalytics />} />} />
           <Route path="reports" element={<ProtectedPage pageCode="reports" element={<Reports />} />} />
           <Route path="settings/users" element={<ProtectedPage pageCode="settings_users" element={<UsersSettings />} />} />
           <Route path="settings" element={<ComingSoon title="Sozlamalar" />} />

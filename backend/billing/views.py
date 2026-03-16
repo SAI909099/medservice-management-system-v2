@@ -56,7 +56,13 @@ class ChargeViewSet(viewsets.ModelViewSet):
     def treatment_room(self, request):
         status_value = request.query_params.get("status")
         today = request.query_params.get("today")
-        data = get_treatment_room_patient_rows(user=request.user, status_value=status_value, today_only=(today == "1"))
+        treatment_state = request.query_params.get("treatment_state", "all")
+        data = get_treatment_room_patient_rows(
+            user=request.user,
+            status_value=status_value,
+            today_only=(today == "1"),
+            treatment_state=treatment_state,
+        )
         page = self.paginate_queryset(data)
         items = page if page is not None else data
         if page is not None:
@@ -70,7 +76,8 @@ class ChargeViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=False, methods=["get"], url_path="patient-ledger")
     def patient_ledger(self, request):
-        rows = get_patient_ledger_rows(request.user)
+        include_treatment = request.query_params.get("include_treatment", "0") == "1"
+        rows = get_patient_ledger_rows(request.user, include_treatment=include_treatment)
         return response.Response({"results": rows})
 
     @decorators.action(detail=False, methods=["post"], url_path="pay-by-patient")
@@ -139,6 +146,7 @@ class ChargeViewSet(viewsets.ModelViewSet):
         return response.Response(
             {
                 "payment_id": payment.id,
+                "receipt_no": payment.receipt.receipt_no,
                 "charge_id": charge.id,
                 "status": charge.status,
                 "paid_amount": charge.paid_amount,

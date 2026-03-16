@@ -34,14 +34,18 @@ Bu funksiya davolash xonasida (`in_progress`) turgan bemorlar uchun har kuni yot
 `backend/.env` konfiguratsiya:
 ```env
 TREATMENT_DAILY_CHARGE_ENABLED=True
-TREATMENT_DAILY_CHARGE_HOUR=12
-TREATMENT_DAILY_CHARGE_MINUTE=0
+TREATMENT_DAILY_CHARGE_HOUR=11
+TREATMENT_DAILY_CHARGE_MINUTE=59
+TREATMENT_CHARGE_MODE=daily
+TREATMENT_INTERVAL_MINUTES=1
 ```
 
 Izoh:
 - `TREATMENT_DAILY_CHARGE_ENABLED` -> yoqish/o'chirish
 - `TREATMENT_DAILY_CHARGE_HOUR` -> soat (`0-23`)
 - `TREATMENT_DAILY_CHARGE_MINUTE` -> daqiqa (`0-59`)
+- `TREATMENT_CHARGE_MODE` -> `daily` yoki `interval`
+- `TREATMENT_INTERVAL_MINUTES` -> interval rejimida necha daqiqada bir marta charge yaratiladi
 
 Manual run (hozir darhol):
 ```bash
@@ -58,6 +62,12 @@ Force run (vaqtga qaramaydi):
 ```bash
 cd backend
 ../.venv/bin/python manage.py run_treatment_daily_charge --force
+```
+
+Interval test run (har 1 daqiqada):
+```bash
+cd backend
+../.venv/bin/python manage.py run_treatment_daily_charge --mode interval --interval-minutes 1 --force
 ```
 
 Aniq sana uchun (YYYY-MM-DD):

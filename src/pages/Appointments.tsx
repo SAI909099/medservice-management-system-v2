@@ -35,8 +35,7 @@ type RegistrationForm = {
   first_name: string;
   last_name: string;
   gender: string;
-  date_of_birth: string;
-  age: string;
+  birth_year: string;
   phone: string;
   address: string;
   reason: string;
@@ -60,8 +59,7 @@ export function Appointments() {
     first_name: '',
     last_name: '',
     gender: '',
-    date_of_birth: '',
-    age: '',
+    birth_year: '',
     phone: '',
     address: '',
     reason: '',
@@ -112,6 +110,15 @@ export function Appointments() {
         return;
       }
       const clinicId = selectedDoctor.clinic_id ?? user?.clinic ?? null;
+      const currentYear = new Date().getFullYear();
+      const birthYearNum = form.birth_year ? Number(form.birth_year) : null;
+      if (birthYearNum && (birthYearNum < 1900 || birthYearNum > currentYear)) {
+        setMessage("Tug'ilgan yil noto'g'ri. 1900 dan hozirgi yilgacha kiriting.");
+        setSubmitting(false);
+        return;
+      }
+      const birthDate = birthYearNum ? `${birthYearNum}-01-01` : null;
+      const calculatedAge = birthYearNum ? Math.max(0, currentYear - birthYearNum) : null;
 
       const patient = await apiRequest<{ id: number }>('/patients/', {
         method: 'POST',
@@ -119,8 +126,8 @@ export function Appointments() {
           first_name: form.first_name,
           last_name: form.last_name,
           gender: form.gender,
-          date_of_birth: form.date_of_birth || null,
-          age: form.age ? Number(form.age) : null,
+          date_of_birth: birthDate,
+          age: calculatedAge,
           phone: form.phone,
           address: form.address,
           ...(clinicId ? { clinic: clinicId } : {}),
@@ -165,8 +172,7 @@ export function Appointments() {
         first_name: '',
         last_name: '',
         gender: '',
-        date_of_birth: '',
-        age: '',
+        birth_year: '',
         phone: '',
         address: '',
         reason: '',
@@ -196,8 +202,15 @@ export function Appointments() {
             <option value="erkak">Erkak</option>
             <option value="ayol">Ayol</option>
           </select>
-          <input className="border rounded px-3 py-2" type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} />
-          <input className="border rounded px-3 py-2" type="number" min={0} placeholder="Yosh" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
+          <input
+            className="border rounded px-3 py-2"
+            type="number"
+            min={1900}
+            max={new Date().getFullYear()}
+            placeholder="Tug'ilgan yili (masalan: 1998)"
+            value={form.birth_year}
+            onChange={(e) => setForm({ ...form, birth_year: e.target.value })}
+          />
           <input className="border rounded px-3 py-2" placeholder="Telefon raqam" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
           <input className="border rounded px-3 py-2 md:col-span-2" placeholder="Manzil" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           <textarea className="border rounded px-3 py-2 md:col-span-2" placeholder="Tashrif sababi" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
@@ -240,7 +253,7 @@ export function Appointments() {
             <tr>
               <th className="px-4 py-3 text-left text-sm font-semibold">Bemor</th>
               <th className="px-4 py-3 text-left text-sm font-semibold">Jinsi</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold">Tug'ilgan sana</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold">Tug'ilgan yili</th>
               <th className="px-4 py-3 text-left text-sm font-semibold">Shifokor</th>
               <th className="px-4 py-3 text-left text-sm font-semibold">Sana</th>
               <th className="px-4 py-3 text-left text-sm font-semibold">Holat</th>
@@ -251,7 +264,7 @@ export function Appointments() {
               <tr key={a.id}>
                 <td className="px-4 py-3 text-sm">{a.patient_name}</td>
                 <td className="px-4 py-3 text-sm">{a.patient_gender || '-'}</td>
-                <td className="px-4 py-3 text-sm">{a.patient_date_of_birth ? new Date(a.patient_date_of_birth).toLocaleDateString() : '-'}</td>
+                <td className="px-4 py-3 text-sm">{a.patient_date_of_birth ? new Date(a.patient_date_of_birth).getFullYear() : '-'}</td>
                 <td className="px-4 py-3 text-sm">{a.doctor_name}</td>
                 <td className="px-4 py-3 text-sm">{new Date(a.scheduled_at).toLocaleString()}</td>
                 <td className="px-4 py-3 text-sm">{a.status}</td>

@@ -1,15 +1,27 @@
 import React from 'react';
-import { Bell, Search, UserCircle } from 'lucide-react';
+import { Bell, Menu, Search, UserCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
-export function Header() {
+interface HeaderProps {
+  onMenuToggle: () => void;
+}
+
+export function Header({ onMenuToggle }: HeaderProps) {
   const { user, logout } = useAuth();
   const fullName = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || 'User';
 
   return (
     <header className="bg-white/80 backdrop-blur shadow-sm border-b border-teal-100 z-10">
       <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-1 items-center">
+        <div className="flex flex-1 items-center gap-2">
+          <button
+            type="button"
+            onClick={onMenuToggle}
+            className="inline-flex lg:hidden items-center justify-center rounded-md border border-teal-200 bg-white p-2 text-teal-800 hover:bg-teal-50"
+          >
+            <span className="sr-only">Menyuni ochish</span>
+            <Menu className="h-5 w-5" aria-hidden="true" />
+          </button>
           <div className="w-full max-w-lg lg:max-w-xs">
             <label htmlFor="search" className="sr-only">Qidirish</label>
             <div className="relative">
@@ -34,7 +46,7 @@ export function Header() {
           </button>
           
           <div className="flex items-center space-x-3">
-            <div className="flex flex-col text-right">
+            <div className="hidden sm:flex flex-col text-right">
               <span className="text-sm font-medium text-gray-900">{fullName}</span>
               <span className="text-xs text-gray-500">{user?.role?.name || '-'}</span>
             </div>

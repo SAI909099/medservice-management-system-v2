@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { apiRequest } from '@/lib/api';
+import {
+  openReceiptPrintWindow,
+  printPaymentReceipt,
+  printPaymentReceiptToWindow,
+  type PaymentApplyResponse,
+} from '@/lib/receiptPrinter';
+import { useAuth } from '@/context/AuthContext';
 
 type BillingStatus = 'unpaid' | 'partial' | 'paid' | 'prepaid';
 
@@ -7,6 +14,7 @@ interface TreatmentRoomCharge {
   patient_id: number;
   patient_name: string;
   status: BillingStatus;
+  treatment_state: 'active' | 'left';
   total_amount: string;
   paid_amount: string;
   debt_amount: string;
@@ -21,8 +29,10 @@ interface Paginated<T> {
 }
 
 export function TreatmentRoomBilling() {
+  const { user } = useAuth();
   const [items, setItems] = useState<TreatmentRoomCharge[]>([]);
   const [status, setStatus] = useState<'all' | BillingStatus>('all');
+  const [treatmentState, setTreatmentState] = useState<'all' | 'active' | 'left'>('all');
   const [todayOnly, setTodayOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -31,12 +41,18 @@ export function TreatmentRoomBilling() {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'insurance'>('cash');
   const [paymentNote, setPaymentNote] = useState('');
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<{
+    payload: PaymentApplyResponse;
+    paymentMethod: 'cash' | 'card' | 'transfer' | 'insurance';
+    note: string;
+  } | null>(null);
 
   const loadItems = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (status !== 'all') params.set('status', status);
+      params.set('treatment_state', treatmentState);
       if (todayOnly) params.set('today', '1');
       const res = await apiRequest<Paginated<TreatmentRoomCharge>>(`/charges/treatment-room/?${params.toString()}`);
       setItems(res.results || []);
@@ -50,7 +66,7 @@ export function TreatmentRoomBilling() {
 
   useEffect(() => {
     loadItems();
-  }, [status, todayOnly]);
+  }, [status, todayOnly, treatmentState]);
 
   const generateDailyCharges = async () => {
     setMessage('');
@@ -83,10 +99,11 @@ export function TreatmentRoomBilling() {
   const submitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!paymentTarget) return;
+    const preparedPrintWindow = openReceiptPrintWindow();
     setPaymentSubmitting(true);
     setMessage('');
     try {
-      const res = await apiRequest<{ applied_amount: string; debt_before: string; debt_after: string; advance_amount: string }>(
+      const res = await apiRequest<PaymentApplyResponse>(
         '/charges/treatment-pay-by-patient/',
         {
         method: 'POST',
@@ -97,6 +114,12 @@ export function TreatmentRoomBilling() {
           note: paymentNote,
         }),
       });
+      const printOk = printPaymentReceiptToWindow(preparedPrintWindow, res, {
+        paymentMethod,
+        note: paymentNote,
+        cashierName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || '-',
+      });
+      setLastReceipt({ payload: res, paymentMethod, note: paymentNote });
       setMessage(
         `To'lov qabul qilindi: ${Number(res.applied_amount).toLocaleString()} so'm. Qarz: ${Number(
           res.debt_before,
@@ -104,11 +127,14 @@ export function TreatmentRoomBilling() {
           Number(res.advance_amount) > 0
             ? `, Oldindan to'langan: ${Number(res.advance_amount).toLocaleString()} so'm`
             : ''
-        }.`,
+        }.${printOk ? '' : ' Print oynasi bloklandi. Pastdagi tugma bilan qayta chop eting.'}`,
       );
       await loadItems();
       closePaymentModal();
     } catch (err) {
+      if (preparedPrintWindow && !preparedPrintWindow.closed) {
+        preparedPrintWindow.close();
+      }
       if (err && typeof err === 'object' && typeof (err as Record<string, unknown>).detail === 'string') {
         setMessage((err as Record<string, string>).detail);
       } else {
@@ -139,6 +165,30 @@ export function TreatmentRoomBilling() {
           className="rounded bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600"
         >
           Kunlik charge yaratish
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setTreatmentState('all')}
+          className={`rounded-full px-3 py-1 text-xs font-medium ${treatmentState === 'all' ? 'bg-indigo-700 text-white' : 'bg-indigo-100 text-indigo-700'}`}
+        >
+          Barchasi
+        </button>
+        <button
+          type="button"
+          onClick={() => setTreatmentState('active')}
+          className={`rounded-full px-3 py-1 text-xs font-medium ${treatmentState === 'active' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-700'}`}
+        >
+          Davolanayotgan
+        </button>
+        <button
+          type="button"
+          onClick={() => setTreatmentState('left')}
+          className={`rounded-full px-3 py-1 text-xs font-medium ${treatmentState === 'left' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700'}`}
+        >
+          Chiqqan
         </button>
       </div>
 
@@ -185,6 +235,23 @@ export function TreatmentRoomBilling() {
       </div>
 
       {message ? <p className="text-sm text-teal-700">{message}</p> : null}
+      {lastReceipt ? (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() =>
+              printPaymentReceipt(lastReceipt.payload, {
+                paymentMethod: lastReceipt.paymentMethod,
+                note: lastReceipt.note,
+                cashierName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || '-',
+              })
+            }
+            className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Receipt qayta print
+          </button>
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow">
         <table className="min-w-full divide-y divide-gray-200">
@@ -196,6 +263,7 @@ export function TreatmentRoomBilling() {
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">To'langan</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Qarz</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Holat</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Davolash</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Oxirgi sana</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Amal</th>
             </tr>
@@ -221,6 +289,17 @@ export function TreatmentRoomBilling() {
                     }`}
                   >
                     {statusLabel[row.status]}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm">
+                  <span
+                    className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                      row.treatment_state === 'active'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {row.treatment_state === 'active' ? 'Davolanayotgan' : 'Chiqqan'}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">{new Date(row.last_charge_at).toLocaleDateString()}</td>

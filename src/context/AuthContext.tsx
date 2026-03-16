@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { apiRequest, isAuthenticated, login as loginRequest, logout as logoutRequest } from '@/lib/api';
+import {
+  AUTH_EXPIRED_EVENT,
+  apiRequest,
+  isAuthenticated,
+  login as loginRequest,
+  logout as logoutRequest,
+} from '@/lib/api';
 
 interface MeResponse {
   id: number;
@@ -32,8 +38,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       return;
     }
-    const me = await apiRequest<MeResponse>('/auth/me/');
-    setUser(me);
+    try {
+      const me = await apiRequest<MeResponse>('/auth/me/');
+      setUser(me);
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      if (status === 401) {
+        logoutRequest();
+        setUser(null);
+        return;
+      }
+      throw error;
+    }
   };
 
   const login = async (username: string, password: string) => {
@@ -48,6 +64,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refreshMe().finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const onAuthExpired = () => {
+      logoutRequest();
+      setUser(null);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
   }, []);
 
   const value = useMemo(

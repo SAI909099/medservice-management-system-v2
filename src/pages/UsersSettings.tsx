@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
 type RoleItem = { id: number; name: string; description: string };
 type PageItem = { code: string; label: string };
@@ -28,10 +29,13 @@ type NewUserForm = {
 };
 
 export function UsersSettings() {
+  const { user: currentUser, refreshMe } = useAuth();
   const [meta, setMeta] = useState<MetaPayload>({ roles: [], pages: [], role_defaults: {} });
   const [users, setUsers] = useState<UserItem[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState<NewUserForm>({
     username: '',
@@ -50,6 +54,10 @@ export function UsersSettings() {
   const defaultRolePages = useMemo(
     () => (selectedRoleName ? meta.role_defaults[selectedRoleName] || [] : []),
     [meta.role_defaults, selectedRoleName],
+  );
+  const pageLabelByCode = useMemo(
+    () => Object.fromEntries(meta.pages.map((page) => [page.code, page.label])),
+    [meta.pages],
   );
 
   const loadUsers = async () => {
@@ -86,19 +94,29 @@ export function UsersSettings() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.role_id) return;
+    setStatusMessage('');
+    setErrorMessage('');
 
-    await apiRequest('/auth/users/', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...form,
-        role_id: Number(form.role_id),
-        allowed_pages: selectedPages,
-      }),
-    });
+    try {
+      await apiRequest('/auth/users/', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...form,
+          role_id: Number(form.role_id),
+          allowed_pages: selectedPages,
+        }),
+      });
 
-    setForm({ username: '', password: '', first_name: '', last_name: '', phone: '', role_id: '' });
-    setSelectedPages([]);
-    await loadUsers();
+      setForm({ username: '', password: '', first_name: '', last_name: '', phone: '', role_id: '' });
+      setSelectedPages([]);
+      setStatusMessage("Foydalanuvchi yaratildi va sahifa ruxsatlari biriktirildi.");
+      await loadUsers();
+    } catch (err: any) {
+      const passwordErr = err?.password?.[0];
+      const usernameErr = err?.username?.[0];
+      const detailErr = err?.detail;
+      setErrorMessage(passwordErr || usernameErr || detailErr || "Foydalanuvchini yaratishda xatolik yuz berdi.");
+    }
   };
 
   const openPermissionEditor = (user: UserItem) => {
@@ -108,32 +126,55 @@ export function UsersSettings() {
 
   const savePermissions = async () => {
     if (!selectedUser) return;
-    await apiRequest(`/auth/users/${selectedUser.id}/permissions/`, {
-      method: 'PATCH',
-      body: JSON.stringify({ allowed_pages: selectedPages }),
-    });
-    setSelectedUser(null);
-    await loadUsers();
+    setStatusMessage('');
+    setErrorMessage('');
+    try {
+      await apiRequest(`/auth/users/${selectedUser.id}/permissions/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ allowed_pages: selectedPages }),
+      });
+      if (currentUser?.id === selectedUser.id) {
+        await refreshMe();
+      }
+      setSelectedUser(null);
+      setStatusMessage("Sahifa ruxsatlari saqlandi. Sidebar avtomatik yangilandi.");
+      await loadUsers();
+    } catch (err: any) {
+      setErrorMessage(err?.detail || "Ruxsatlarni saqlashda xatolik yuz berdi.");
+    }
   };
 
   const deleteUser = async (user: UserItem) => {
     const ok = window.confirm(`${user.username} foydalanuvchisini o'chirishni tasdiqlaysizmi?`);
     if (!ok) return;
-    await apiRequest(`/auth/users/${user.id}/`, { method: 'DELETE' });
-    if (selectedUser?.id === user.id) {
-      setSelectedUser(null);
+    setErrorMessage('');
+    try {
+      await apiRequest(`/auth/users/${user.id}/`, { method: 'DELETE' });
+      if (selectedUser?.id === user.id) {
+        setSelectedUser(null);
+      }
+      setStatusMessage("Foydalanuvchi o'chirildi.");
+      await loadUsers();
+    } catch (err: any) {
+      setErrorMessage(err?.detail || "Foydalanuvchini o'chirishda xatolik yuz berdi.");
     }
-    await loadUsers();
   };
 
   const resetPassword = async (user: UserItem) => {
     const newPassword = window.prompt(`${user.username} uchun yangi parol kiriting (min 6 ta belgi):`);
     if (!newPassword) return;
-    await apiRequest(`/auth/users/${user.id}/password/`, {
-      method: 'PATCH',
-      body: JSON.stringify({ new_password: newPassword }),
-    });
-    window.alert('Parol yangilandi.');
+    setErrorMessage('');
+    try {
+      await apiRequest(`/auth/users/${user.id}/password/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      setStatusMessage("Parol yangilandi.");
+      window.alert('Parol yangilandi.');
+    } catch (err: any) {
+      const pwdErr = err?.new_password?.[0];
+      setErrorMessage(pwdErr || err?.detail || "Parolni yangilashda xatolik yuz berdi.");
+    }
   };
 
   return (
@@ -142,6 +183,16 @@ export function UsersSettings() {
         <h2 className="text-2xl font-bold text-gray-900">Foydalanuvchilar va ruxsatlar</h2>
         <p className="text-sm text-gray-500">Foydalanuvchi yaratish va sahifa ruxsatlarini yoqish/o‘chirish.</p>
       </div>
+      {statusMessage ? (
+        <div className="rounded border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-800">
+          {statusMessage}
+        </div>
+      ) : null}
+      {errorMessage ? (
+        <div className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {errorMessage}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <form onSubmit={handleCreate} className="bg-white rounded-lg border border-gray-200 shadow p-4 space-y-3">
@@ -203,7 +254,9 @@ export function UsersSettings() {
                 <div>
                   <p className="font-medium text-sm">{u.username} ({u.role?.name || '-'})</p>
                   <p className="text-xs text-gray-500">{u.first_name} {u.last_name}</p>
-                  <p className="text-xs text-gray-500 mt-1">{(u.allowed_pages || []).join(', ') || 'Sahifa biriktirilmagan'}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {(u.allowed_pages || []).map((code) => pageLabelByCode[code] || code).join(', ') || 'Sahifa biriktirilmagan'}
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => openPermissionEditor(u)} className="text-sm rounded bg-gray-100 px-3 py-1 hover:bg-gray-200">Ruxsatlar</button>

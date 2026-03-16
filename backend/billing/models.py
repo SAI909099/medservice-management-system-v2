@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import models
+from django.db.models import Q
 
 
 class Service(models.Model):
@@ -29,6 +30,7 @@ class Charge(models.Model):
         blank=True,
         related_name="charges",
     )
+    treatment_charge_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.UNPAID)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
@@ -37,6 +39,13 @@ class Charge(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["treatment_referral", "treatment_charge_date"],
+                condition=Q(treatment_referral__isnull=False, treatment_charge_date__isnull=False),
+                name="uniq_treatment_referral_daily_charge",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"Charge #{self.id} - {self.patient}"

@@ -9,7 +9,7 @@ from clinics.views import BranchViewSet, ClinicViewSet
 from doctors.views import DoctorPricingViewSet, DoctorScheduleViewSet, DoctorViewSet
 from laboratory.views import LabReferralViewSet, LabServiceViewSet
 from patients.views import PatientViewSet
-from reports.views import ReportsView
+from reports.views import ExpenseViewSet, IncomeAnalyticsView, ReportsView
 from treatment_rooms.views import TreatmentAreaViewSet, TreatmentReferralViewSet, TreatmentRoomViewSet
 
 router = DefaultRouter()
@@ -28,6 +28,7 @@ router.register(r"treatment-referrals", TreatmentReferralViewSet, basename="trea
 router.register(r"charges", ChargeViewSet, basename="charge")
 router.register(r"payments", PaymentViewSet, basename="payment")
 router.register(r"services", ServiceViewSet, basename="service")
+router.register(r"report-expenses", ExpenseViewSet, basename="report-expense")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -35,6 +36,7 @@ urlpatterns = [
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/auth/", include("accounts.urls")),
     path("api/reports/", ReportsView.as_view(), name="reports"),
+    path("api/reports/income-analytics/", IncomeAnalyticsView.as_view(), name="income-analytics"),
     path("api/receipts/<int:payment_id>/", ReceiptView.as_view(), name="receipt"),
     path("api/", include(router.urls)),
 ]

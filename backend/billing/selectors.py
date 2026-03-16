@@ -1,8 +1,9 @@
 from decimal import Decimal
 
-from django.db.models import Count, Max, Sum
+from django.db.models import Count, Exists, Max, OuterRef, Sum
 
 from .models import Charge
+from treatment_rooms.models import TreatmentReferral
 
 
 def _scoped_charge_queryset(user):
@@ -18,9 +19,13 @@ def _scoped_charge_queryset(user):
     return queryset
 
 
-def get_patient_ledger_rows(user):
+def get_patient_ledger_rows(user, include_treatment: bool = False):
+    queryset = _scoped_charge_queryset(user)
+    if not include_treatment:
+        queryset = queryset.filter(treatment_referral__isnull=True)
+
     rows = (
-        _scoped_charge_queryset(user)
+        queryset
         .values("patient_id", "patient__first_name", "patient__last_name")
         .annotate(
             total_amount=Sum("total_amount"),
@@ -122,12 +127,22 @@ def get_patient_ledger_print_data(user, patient_id: int):
     }
 
 
-def get_treatment_room_patient_rows(user, status_value: str | None = None, today_only: bool = False):
+def get_treatment_room_patient_rows(
+    user,
+    status_value: str | None = None,
+    today_only: bool = False,
+    treatment_state: str | None = None,
+):
     queryset = _scoped_charge_queryset(user).filter(treatment_referral__isnull=False)
     if today_only:
         from django.utils import timezone
 
         queryset = queryset.filter(created_at__date=timezone.localdate())
+
+    active_referrals = TreatmentReferral.objects.filter(
+        patient_id=OuterRef("patient_id"),
+        status=TreatmentReferral.Status.IN_PROGRESS,
+    )
 
     rows = (
         queryset.values("patient_id", "patient__first_name", "patient__last_name")
@@ -136,6 +151,7 @@ def get_treatment_room_patient_rows(user, status_value: str | None = None, today
             paid_amount=Sum("paid_amount"),
             charge_count=Count("id"),
             last_charge_at=Max("created_at"),
+            has_active_referral=Exists(active_referrals),
         )
         .order_by("-last_charge_at")
     )
@@ -155,13 +171,18 @@ def get_treatment_room_patient_rows(user, status_value: str | None = None, today
             row_status = "prepaid"
         else:
             row_status = "paid"
+
+        row_treatment_state = "active" if row.get("has_active_referral") else "left"
         if status_value and row_status != status_value:
+            continue
+        if treatment_state and treatment_state != "all" and row_treatment_state != treatment_state:
             continue
         result.append(
             {
                 "patient_id": row["patient_id"],
                 "patient_name": f"{row['patient__first_name']} {row['patient__last_name']}".strip(),
                 "status": row_status,
+                "treatment_state": row_treatment_state,
                 "total_amount": total_amount,
                 "paid_amount": paid_amount,
                 "debt_amount": debt_amount,

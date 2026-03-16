@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+export const AUTH_EXPIRED_EVENT = 'auth:expired';
 
 export interface TokenPair {
   access: string;
@@ -18,6 +19,12 @@ const tokenStore = {
   },
 };
 
+function emitAuthExpired(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+  }
+}
+
 async function refreshAccessToken(): Promise<void> {
   const refresh = tokenStore.getRefresh();
   if (!refresh) {
@@ -32,6 +39,7 @@ async function refreshAccessToken(): Promise<void> {
 
   if (!response.ok) {
     tokenStore.clear();
+    emitAuthExpired();
     throw new Error('Sessiya muddati tugagan');
   }
 
@@ -60,9 +68,16 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, retrie
     return apiRequest<T>(path, init, true);
   }
 
+  if (response.status === 401) {
+    tokenStore.clear();
+    emitAuthExpired();
+  }
+
   const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw payload || { detail: "So'rov muvaffaqiyatsiz tugadi" };
+    const errorPayload =
+      payload && typeof payload === 'object' ? payload : { detail: "So'rov muvaffaqiyatsiz tugadi" };
+    throw { ...errorPayload, status: response.status };
   }
 
   return payload as T;
