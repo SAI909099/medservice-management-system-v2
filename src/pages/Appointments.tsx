@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
 import { Paginated } from '@/lib/types';
+import { printServiceQueueTickets } from '@/lib/serviceQueuePrinter';
 
 type DoctorOption = {
   id: number;
@@ -16,9 +16,17 @@ type LabStaffOption = {
   full_name: string;
 };
 
+type ServiceOption = {
+  id: number;
+  name: string;
+  category: string;
+  price: string;
+};
+
 type StaffOptionsResponse = {
   doctors: DoctorOption[];
   lab_staff: LabStaffOption[];
+  services: ServiceOption[];
 };
 
 type AppointmentItem = {
@@ -31,6 +39,16 @@ type AppointmentItem = {
   status: string;
 };
 
+type ServiceQueueTicket = {
+  id: number;
+  service_id: number;
+  service_name: string;
+  queue_code: string;
+  queue_date: string;
+  status: string;
+  patient_name: string;
+};
+
 type RegistrationForm = {
   first_name: string;
   last_name: string;
@@ -40,6 +58,7 @@ type RegistrationForm = {
   address: string;
   reason: string;
   doctor: string;
+  service_ids: number[];
 };
 
 function extractApiError(error: unknown): string {
@@ -54,7 +73,6 @@ function extractApiError(error: unknown): string {
 }
 
 export function Appointments() {
-  const { user } = useAuth();
   const [form, setForm] = useState<RegistrationForm>({
     first_name: '',
     last_name: '',
@@ -64,20 +82,23 @@ export function Appointments() {
     address: '',
     reason: '',
     doctor: '',
+    service_ids: [],
   });
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [labStaff, setLabStaff] = useState<LabStaffOption[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
+  const [lastQueueTickets, setLastQueueTickets] = useState<ServiceQueueTicket[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
 
-  const totalAmount = useMemo(
-    () => {
-      const doctorPrice = Number(doctors.find((d) => String(d.id) === form.doctor)?.appointment_price || 0);
-      return doctorPrice;
-    },
-    [doctors, form.doctor],
-  );
+  const totalAmount = useMemo(() => {
+    const doctorPrice = Number(doctors.find((d) => String(d.id) === form.doctor)?.appointment_price || 0);
+    const servicesTotal = services
+      .filter((service) => form.service_ids.includes(service.id))
+      .reduce((acc, service) => acc + Number(service.price || 0), 0);
+    return doctorPrice + servicesTotal;
+  }, [doctors, services, form.doctor, form.service_ids]);
 
   const loadInitial = async () => {
     const [staffRes, appointmentRes] = await Promise.all([
@@ -86,6 +107,7 @@ export function Appointments() {
     ]);
     setDoctors(staffRes.doctors || []);
     setLabStaff(staffRes.lab_staff || []);
+    setServices(staffRes.services || []);
     setAppointments(appointmentRes.results || []);
   };
 
@@ -93,9 +115,19 @@ export function Appointments() {
     loadInitial().catch(() => {
       setDoctors([]);
       setLabStaff([]);
+      setServices([]);
       setAppointments([]);
     });
   }, []);
+
+  const toggleService = (serviceId: number) => {
+    setForm((prev) => ({
+      ...prev,
+      service_ids: prev.service_ids.includes(serviceId)
+        ? prev.service_ids.filter((id) => id !== serviceId)
+        : [...prev.service_ids, serviceId],
+    }));
+  };
 
   const submitRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,71 +135,42 @@ export function Appointments() {
     setMessage('');
 
     try {
-      const selectedDoctor = doctors.find((d) => String(d.id) === form.doctor);
-      if (!selectedDoctor) {
-        setMessage("Shifokor topilmadi. Qayta tanlang.");
-        setSubmitting(false);
-        return;
-      }
-      const clinicId = selectedDoctor.clinic_id ?? user?.clinic ?? null;
-      const currentYear = new Date().getFullYear();
       const birthYearNum = form.birth_year ? Number(form.birth_year) : null;
-      if (birthYearNum && (birthYearNum < 1900 || birthYearNum > currentYear)) {
-        setMessage("Tug'ilgan yil noto'g'ri. 1900 dan hozirgi yilgacha kiriting.");
-        setSubmitting(false);
-        return;
-      }
-      const birthDate = birthYearNum ? `${birthYearNum}-01-01` : null;
-      const calculatedAge = birthYearNum ? Math.max(0, currentYear - birthYearNum) : null;
-
-      const patient = await apiRequest<{ id: number }>('/patients/', {
+      const registerRes = await apiRequest<{
+        patient_id: number;
+        appointment_id: number | null;
+        created_charge_ids: number[];
+        appointment_charge_total: string;
+        service_charge_total: string;
+        grand_total: string;
+        service_queue_tickets: ServiceQueueTicket[];
+      }>('/appointments/register/', {
         method: 'POST',
         body: JSON.stringify({
           first_name: form.first_name,
           last_name: form.last_name,
           gender: form.gender,
-          date_of_birth: birthDate,
-          age: calculatedAge,
+          birth_year: birthYearNum,
           phone: form.phone,
           address: form.address,
-          ...(clinicId ? { clinic: clinicId } : {}),
-        }),
-      });
-
-      const appointment = await apiRequest<{ id: number }>('/appointments/', {
-        method: 'POST',
-        body: JSON.stringify({
-          patient: patient.id,
-          doctor: selectedDoctor.id,
           complaint: form.reason,
+          doctor: form.doctor ? Number(form.doctor) : null,
+          service_ids: form.service_ids,
         }),
       });
 
-      const doctor = selectedDoctor;
-      const items = [
-        ...(doctor && Number(doctor.appointment_price) > 0
-          ? [{
-              description: `Qabul: ${doctor.full_name}`,
-              quantity: 1,
-              unit_price: doctor.appointment_price,
-              total_price: doctor.appointment_price,
-            }]
-          : []),
-      ];
-
-      if (items.length > 0) {
-        await apiRequest('/charges/', {
-          method: 'POST',
-          body: JSON.stringify({
-            patient: patient.id,
-            appointment: appointment.id,
-            notes: form.reason,
-            items,
-          }),
-        });
+      setMessage(
+        `Ro'yxatga olindi. Qabul: ${Number(registerRes.appointment_charge_total).toLocaleString()} so'm, ` +
+          `Xizmatlar: ${Number(registerRes.service_charge_total).toLocaleString()} so'm, ` +
+          `Jami: ${Number(registerRes.grand_total).toLocaleString()} so'm (to'lanmagan).`,
+      );
+      setLastQueueTickets(registerRes.service_queue_tickets || []);
+      if (registerRes.service_queue_tickets?.length) {
+        const printed = printServiceQueueTickets(registerRes.service_queue_tickets);
+        if (!printed) {
+          setMessage((prev) => `${prev} Navbat cheki popup blok bo'lgani uchun chiqmay qoldi.`);
+        }
       }
-
-      setMessage(`Ro'yxatga olindi. Jami to'lov: ${totalAmount.toLocaleString()} so'm (to'lanmagan).`);
       setForm({
         first_name: '',
         last_name: '',
@@ -177,6 +180,7 @@ export function Appointments() {
         address: '',
         reason: '',
         doctor: '',
+        service_ids: [],
       });
       await loadInitial();
     } catch (error) {
@@ -194,7 +198,7 @@ export function Appointments() {
       </div>
 
       <form onSubmit={submitRegistration} className="bg-white rounded-lg border border-gray-200 shadow p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <input className="border rounded px-3 py-2" placeholder="Ism" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
           <input className="border rounded px-3 py-2" placeholder="Familiya" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
           <select className="border rounded px-3 py-2" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} required>
@@ -214,8 +218,8 @@ export function Appointments() {
           <input className="border rounded px-3 py-2" placeholder="Telefon raqam" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
           <input className="border rounded px-3 py-2 md:col-span-2" placeholder="Manzil" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           <textarea className="border rounded px-3 py-2 md:col-span-2" placeholder="Tashrif sababi" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
-          <select className="border rounded px-3 py-2" value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} required>
-            <option value="">Shifokorni tanlang</option>
+          <select className="border rounded px-3 py-2" value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}>
+            <option value="">Shifokorsiz (faqat xizmat)</option>
             <optgroup label="Shifokorlar">
               {doctors.map((d) => (
                 <option key={`doc-${d.id}`} value={d.id}>
@@ -225,12 +229,33 @@ export function Appointments() {
             </optgroup>
             <optgroup label="Lab xodimlari (faqat ko'rish)">
               {labStaff.map((s) => (
-                <option key={`lab-${s.id}`} value="" disabled>{s.full_name}</option>
+                <option key={`lab-${s.id}`} value="" disabled>
+                  {s.full_name}
+                </option>
               ))}
             </optgroup>
           </select>
           <div className="border rounded px-3 py-2 bg-teal-50 text-sm text-teal-800 flex items-center">
             Qabul vaqti: avtomatik hozirgi vaqt (now)
+          </div>
+          <div className="md:col-span-2 rounded border border-gray-200 p-3">
+            <p className="mb-2 text-sm font-medium text-gray-700">Qo'shimcha xizmatlar (MRT, UZI va boshqalar)</p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {services.map((service) => (
+                <label key={service.id} className="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm">
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.service_ids.includes(service.id)}
+                      onChange={() => toggleService(service.id)}
+                    />
+                    <span>{service.name}</span>
+                  </span>
+                  <span className="text-teal-700">{Number(service.price || 0).toLocaleString()} so'm</span>
+                </label>
+              ))}
+              {services.length === 0 ? <p className="text-sm text-gray-500">Faol xizmatlar topilmadi.</p> : null}
+            </div>
           </div>
         </div>
 
@@ -240,6 +265,27 @@ export function Appointments() {
         </div>
 
         {message ? <p className="text-sm text-teal-700">{message}</p> : null}
+        {lastQueueTickets.length > 0 ? (
+          <div className="rounded border border-indigo-200 bg-indigo-50 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-semibold text-indigo-800">Xizmat navbat raqamlari</p>
+              <button
+                type="button"
+                onClick={() => printServiceQueueTickets(lastQueueTickets)}
+                className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+              >
+                Print
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {lastQueueTickets.map((ticket) => (
+                <span key={ticket.id} className="rounded bg-white px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200">
+                  {ticket.service_name}: {ticket.queue_code}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <button disabled={submitting} className="rounded bg-teal-700 text-white px-4 py-2 hover:bg-teal-600 disabled:opacity-60" type="submit">
           {submitting ? "Saqlanmoqda..." : "Ro'yxatga olish"}

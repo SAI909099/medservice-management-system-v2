@@ -18,6 +18,7 @@ import { TreatmentRoomBilling } from './pages/TreatmentRoomBilling';
 import { CashRegister } from './pages/CashRegister';
 import { Accountant } from './pages/Accountant';
 import { IncomeAnalytics } from './pages/IncomeAnalytics';
+import { ServiceQueue } from './pages/ServiceQueue';
 
 // Mock empty pages for links in sidebar
 function ComingSoon({ title }: { title: string }) {
@@ -101,6 +102,7 @@ function App() {
           <Route index element={<HomePageResolver />} />
           <Route path="patients" element={<ProtectedPage pageCode="patients" element={<Patients />} />} />
           <Route path="appointments" element={<ProtectedPage pageCode="appointments" element={<Appointments />} />} />
+          <Route path="service-queue" element={<ProtectedPage pageCode="appointments" element={<ServiceQueue />} />} />
           <Route path="doctors" element={<ProtectedPage pageCode="doctors" element={<Doctors />} />} />
           <Route path="lab" element={<ProtectedPage pageCode="lab" element={<Laboratory />} />} />
           <Route path="treatment" element={<ProtectedPage pageCode="treatment" element={<TreatmentRooms />} />} />

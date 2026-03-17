@@ -1,12 +1,15 @@
 from rest_framework import decorators, response, viewsets
+from django.utils.dateparse import parse_date
 from django.utils import timezone
 
 from accounts.models import Role, User
 from accounts.permissions import PageAccessPermission, RoleBasedPermission
+from billing.models import Service
 from doctors.models import Doctor
 
-from .models import Appointment
-from .serializers import AppointmentSerializer
+from .services import register_patient_appointment_with_charges
+from .models import Appointment, ServiceQueueTicket
+from .serializers import AppointmentRegisterSerializer, AppointmentSerializer, ServiceQueueTicketSerializer
 
 
 class AppointmentViewSet(viewsets.ModelViewSet):
@@ -26,6 +29,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=False, methods=["get"], url_path="staff-options")
     def staff_options(self, request):
         doctors = Doctor.objects.select_related("user").filter(is_active=True)
+        services = Service.objects.filter(is_active=True).order_by("name")
         lab_staff = User.objects.select_related("role").filter(role__name=Role.Name.LAB_STAFF, is_active=True)
 
         doctors_data = [
@@ -45,4 +49,59 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             }
             for user in lab_staff
         ]
-        return response.Response({"doctors": doctors_data, "lab_staff": lab_staff_data})
+        services_data = [
+            {
+                "id": service.id,
+                "name": service.name,
+                "category": service.category,
+                "price": service.price,
+            }
+            for service in services
+        ]
+        return response.Response({"doctors": doctors_data, "lab_staff": lab_staff_data, "services": services_data})
+
+    @decorators.action(detail=False, methods=["post"], url_path="register")
+    def register(self, request):
+        serializer = AppointmentRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        try:
+            result = register_patient_appointment_with_charges(
+                user=request.user,
+                first_name=payload["first_name"],
+                last_name=payload["last_name"],
+                gender=payload["gender"],
+                birth_year=payload.get("birth_year"),
+                phone=payload["phone"],
+                address=payload.get("address", ""),
+                complaint=payload.get("complaint", ""),
+                doctor=payload.get("doctor"),
+                services=payload.get("services", []),
+            )
+        except ValueError as exc:
+            return response.Response({"detail": str(exc)}, status=400)
+        return response.Response(result, status=201)
+
+    @decorators.action(detail=False, methods=["get"], url_path="service-queue")
+    def service_queue(self, request):
+        date_raw = request.query_params.get("date")
+        queue_date = parse_date(date_raw) if date_raw else None
+        if queue_date is None:
+            queue_date = timezone.localdate()
+
+        queryset = ServiceQueueTicket.objects.select_related("patient", "service", "appointment").filter(queue_date=queue_date)
+
+        service_id = request.query_params.get("service_id")
+        if service_id:
+            queryset = queryset.filter(service_id=service_id)
+
+        status_value = request.query_params.get("status")
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+
+        queryset = queryset.order_by("service__name", "sequence_number", "created_at")
+        page = self.paginate_queryset(queryset)
+        serializer = ServiceQueueTicketSerializer(page or queryset, many=True)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return response.Response({"results": serializer.data})

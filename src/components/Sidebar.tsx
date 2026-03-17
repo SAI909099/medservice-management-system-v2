@@ -8,6 +8,7 @@ const navigation = [
   { name: 'Boshqaruv paneli', to: '/', icon: LayoutDashboard, pageCode: 'dashboard' },
   { name: 'Bemorlar', to: '/patients', icon: Users, pageCode: 'patients' },
   { name: "Ro'yxatga olish", to: '/appointments', icon: Calendar, pageCode: 'appointments' },
+  { name: 'Xizmat navbati', to: '/service-queue', icon: Calendar, pageCode: 'appointments' },
   { name: 'Shifokorlar', to: '/doctors', icon: UserPlus, pageCode: 'doctors' },
   { name: 'Laboratoriya', to: '/lab', icon: Droplet, pageCode: 'lab' },
   { name: 'Davolash xonasi', to: '/treatment', icon: HeartPulse, pageCode: 'treatment' },
