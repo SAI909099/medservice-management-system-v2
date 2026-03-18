@@ -91,3 +91,62 @@ Open `frontend-vanilla/index.html` via static server.
 
 ## Apps
 - accounts, clinics, patients, doctors, appointments, laboratory, treatment_rooms, billing, reports
+
+## 8. Production deploy (Docker Compose + Nginx, no domain)
+Bu variant bitta serverda `nginx + backend + postgres` stackni ishlatadi.
+
+### 8.1 Serverga kodni olish
+```bash
+sudo mkdir -p /opt/medservice
+sudo chown -R $USER:$USER /opt/medservice
+git clone git@github.com:SAI909099/medservice-management-system-v2.git /opt/medservice
+cd /opt/medservice
+```
+
+### 8.2 Production env tayyorlash
+```bash
+cp backend/.env.prod.example backend/.env.prod
+```
+`backend/.env.prod` ichida quyilarni o'zgartiring:
+- `DJANGO_SECRET_KEY`
+- `POSTGRES_PASSWORD`
+- `ALLOWED_HOSTS=SERVER_IP`
+- `CSRF_TRUSTED_ORIGINS=http://SERVER_IP`
+
+Muhim: compose ichida DB host `POSTGRES_HOST=db` bo'lishi kerak.
+
+### 8.3 Konteynerlarni build va ishga tushirish
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+### 8.4 Bir martalik init amallar
+```bash
+docker compose -f docker-compose.prod.yml exec backend python manage.py migrate
+docker compose -f docker-compose.prod.yml exec backend python manage.py collectstatic --noinput
+docker compose -f docker-compose.prod.yml exec backend python manage.py seed_roles
+docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+```
+
+### 8.5 Tekshirish
+- Frontend: `http://SERVER_IP/`
+- API docs: `http://SERVER_IP/api/docs/`
+- Admin: `http://SERVER_IP/admin/`
+
+### 8.6 Loglar
+```bash
+docker compose -f docker-compose.prod.yml logs -f nginx
+docker compose -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.prod.yml logs -f db
+```
+
+### 8.7 Postgres backup cron
+Script:
+```bash
+/opt/medservice/deploy/scripts/backup_postgres.sh
+```
+
+Cron misol (har kuni 02:00):
+```bash
+0 2 * * * PROJECT_DIR=/opt/medservice BACKUP_DIR=/opt/medservice-data/backups KEEP_DAYS=14 /opt/medservice/deploy/scripts/backup_postgres.sh >> /var/log/medservice_backup.log 2>&1
+```
