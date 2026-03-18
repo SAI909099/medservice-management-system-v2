@@ -77,8 +77,8 @@ Suggested files:
 ![Cashier](docs/assets/cashier.png)
 ![Reports](docs/assets/reports.png)
 
-## Project Owner (Resume Style)
-**Role:** Full-Stack Developer  
+## Project Owner 
+**Role:** Backend Developer  
 **Project:** Medservice Management System v2  
 **Focus:** Scalable clinic workflow platform with modular architecture and production deployment
 
@@ -99,4 +99,4 @@ Suggested files:
 Active development. Production deployment and automated pipelines are configured.
 
 ## Author
-Maintained by the Medservice team.
+Sulaymonov Abdulazizxon.
