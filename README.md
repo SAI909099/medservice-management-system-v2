@@ -72,13 +72,10 @@ Suggested files:
 - `docs/assets/cashier.png`
 - `docs/assets/reports.png`
 
-Example markdown (update after you add images):
-```md
 ![Dashboard](docs/assets/dashboard.png)
 ![Registration](docs/assets/registration.png)
 ![Cashier](docs/assets/cashier.png)
 ![Reports](docs/assets/reports.png)
-```
 
 ## Project Owner (Resume Style)
 **Role:** Full-Stack Developer  
