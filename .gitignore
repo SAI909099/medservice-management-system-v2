@@ -3,8 +3,10 @@
 .env.*
 !.env.example
 
-# Docs (local planning notes/docs snapshots)
-docs/
+# Docs
+docs/*
+!docs/assets/
+!docs/assets/**
 
 # Python
 .venv/
