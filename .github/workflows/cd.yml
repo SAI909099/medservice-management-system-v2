@@ -21,10 +21,20 @@ jobs:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
+          debug: true
+          capture_stdout: true
           script: |
-            set -e
+            set -euxo pipefail
             PROJECT_DIR="${{ secrets.PROD_PROJECT_DIR }}"
             if [ -z "$PROJECT_DIR" ]; then PROJECT_DIR="/opt/medservice"; fi
+
+            echo "User: $(whoami)"
+            echo "Host: $(hostname)"
+            echo "Project dir: $PROJECT_DIR"
+            pwd
+            ls -la "$PROJECT_DIR"
+            docker --version
+            docker compose version
 
             cd "$PROJECT_DIR"
             git fetch origin main
