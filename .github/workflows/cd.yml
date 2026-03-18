@@ -21,8 +21,6 @@ jobs:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          port: ${{ secrets.PROD_PORT != '' && secrets.PROD_PORT || '22' }}
-          script_stop: true
           script: |
             set -e
             PROJECT_DIR="${{ secrets.PROD_PROJECT_DIR }}"
