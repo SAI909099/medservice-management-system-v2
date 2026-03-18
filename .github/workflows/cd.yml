@@ -15,12 +15,29 @@ jobs:
       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
+      - name: Validate required secrets
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_PROJECT_DIR: ${{ secrets.PROD_PROJECT_DIR }}
+        run: |
+          set -euo pipefail
+          [ -n "${PROD_HOST:-}" ] || (echo "Missing secret: PROD_HOST" && exit 1)
+          [ -n "${PROD_USER:-}" ] || (echo "Missing secret: PROD_USER" && exit 1)
+          [ -n "${PROD_SSH_KEY:-}" ] || (echo "Missing secret: PROD_SSH_KEY" && exit 1)
+          if [ -z "${PROD_PROJECT_DIR:-}" ]; then
+            echo "PROD_PROJECT_DIR is empty; default /opt/medservice will be used."
+          fi
+
       - name: Deploy to production server
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
+          timeout: 60s
+          command_timeout: 30m
           debug: true
           script: |
             set -euxo pipefail
