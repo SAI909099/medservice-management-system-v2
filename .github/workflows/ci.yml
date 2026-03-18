@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+  backend-check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: medservice
+          POSTGRES_USER: medservice
+          POSTGRES_PASSWORD: medservice
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U medservice -d medservice"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SECRET_KEY: ci-secret-key
+      DEBUG: "False"
+      ALLOWED_HOSTS: 127.0.0.1,localhost
+      CSRF_TRUSTED_ORIGINS: http://127.0.0.1
+      TIME_ZONE: Asia/Tashkent
+      POSTGRES_DB: medservice
+      POSTGRES_USER: medservice
+      POSTGRES_PASSWORD: medservice
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      JWT_ACCESS_MINUTES: 30
+      JWT_REFRESH_DAYS: 7
+      PAGE_SIZE: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Wait for Postgres
+        run: |
+          python - <<'PY'
+          import time
+          import psycopg2
+          for _ in range(30):
+              try:
+                  conn = psycopg2.connect(
+                      dbname="medservice",
+                      user="medservice",
+                      password="medservice",
+                      host="127.0.0.1",
+                      port=5432,
+                  )
+                  conn.close()
+                  print("Postgres is ready")
+                  break
+              except Exception:
+                  time.sleep(2)
+          else:
+              raise SystemExit("Postgres is not ready")
+          PY
+
+      - name: Run migrations
+        working-directory: backend
+        run: python manage.py migrate --noinput
+
+      - name: Django checks
+        working-directory: backend
+        run: python manage.py check

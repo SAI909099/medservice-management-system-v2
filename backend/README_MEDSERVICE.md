@@ -150,3 +150,24 @@ Cron misol (har kuni 02:00):
 ```bash
 0 2 * * * PROJECT_DIR=/opt/medservice BACKUP_DIR=/opt/medservice-data/backups KEEP_DAYS=14 /opt/medservice/deploy/scripts/backup_postgres.sh >> /var/log/medservice_backup.log 2>&1
 ```
+
+## 9. CI/CD (GitHub Actions)
+Repo ichida 2 ta workflow qo'shildi:
+- `CI` (`.github/workflows/ci.yml`): frontend build + backend migrate/check
+- `CD` (`.github/workflows/cd.yml`): `main` branch CI muvaffaqiyatli bo'lsa serverga deploy
+
+GitHub repository `Settings -> Secrets and variables -> Actions` da quyidagi secretlarni qo'ying:
+- `PROD_HOST` (server IP)
+- `PROD_USER` (odatda `root` yoki deploy user)
+- `PROD_SSH_KEY` (private key, multiline)
+- `PROD_PORT` (ixtiyoriy, default `22`)
+- `PROD_PROJECT_DIR` (ixtiyoriy, default `/opt/medservice`)
+
+Deploy pipeline serverda quyidagilarni bajaradi:
+```bash
+git pull --ff-only origin main
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec -T backend python manage.py migrate --noinput
+docker compose -f docker-compose.prod.yml exec -T backend python manage.py collectstatic --noinput
+docker compose -f docker-compose.prod.yml exec -T backend python manage.py seed_roles || true
+```

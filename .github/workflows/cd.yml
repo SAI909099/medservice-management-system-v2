@@ -1,0 +1,40 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT != '' && secrets.PROD_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -e
+            PROJECT_DIR="${{ secrets.PROD_PROJECT_DIR }}"
+            if [ -z "$PROJECT_DIR" ]; then PROJECT_DIR="/opt/medservice"; fi
+
+            cd "$PROJECT_DIR"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            docker compose -f docker-compose.prod.yml up -d --build
+            docker compose -f docker-compose.prod.yml exec -T backend python manage.py migrate --noinput
+            docker compose -f docker-compose.prod.yml exec -T backend python manage.py collectstatic --noinput
+            docker compose -f docker-compose.prod.yml exec -T backend python manage.py seed_roles || true
+            docker compose -f docker-compose.prod.yml ps
