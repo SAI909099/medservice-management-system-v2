@@ -22,7 +22,6 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           debug: true
-          capture_stdout: true
           script: |
             set -euxo pipefail
             PROJECT_DIR="${{ secrets.PROD_PROJECT_DIR }}"
