@@ -18,53 +18,70 @@ function escapeHtml(value: string): string {
 
 function buildQueueTicketHtml(items: ServiceQueueTicketPrintItem[]): string {
   const printedAt = new Date().toLocaleString();
-  const patient = items[0]?.patient_name || '-';
   return `
     <html>
       <head>
         <title>Service Queue Ticket</title>
         <style>
           @page { size: 58mm auto; margin: 3mm; }
-          body { width: 52mm; margin: 0; padding: 0; font-family: Arial, sans-serif; font-size: 12px; color: #111; }
-          .line { border-top: 1px dashed #000; margin: 5px 0; }
+          body { width: 52mm; margin: 0; padding: 0; font-family: Arial, sans-serif; font-size: 11px; color: #111; }
+          .line { border-top: 1px dashed #000; margin: 4px 0; }
           .center { text-align: center; }
           .bold { font-weight: 700; }
-          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-          th, td { text-align: left; font-size: 11px; padding: 2px 0; }
-          th:last-child, td:last-child { text-align: right; }
+          .ticket { padding: 2px 0; }
+          .ticket + .ticket { margin-top: 6px; border-top: 1px dashed #000; padding-top: 6px; }
+          .queue-hero {
+            text-align: center;
+            font-size: 48px;
+            line-height: 1;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            margin: 4px 0 6px;
+          }
+          .meta { font-size: 10px; line-height: 1.3; }
+          .meta-row { display: flex; justify-content: space-between; gap: 8px; margin: 1px 0; }
+          .print-btn-wrap { margin-top: 6px; text-align: center; }
+          @media print {
+            .print-btn-wrap { display: none !important; }
+          }
         </style>
       </head>
       <body>
         <div class="center bold">Medservise</div>
         <div class="center">Xizmat navbati</div>
         <div class="line"></div>
-        <div><span class="bold">Bemor:</span> ${escapeHtml(patient)}</div>
-        <div><span class="bold">Sana:</span> ${escapeHtml(printedAt)}</div>
-        <div class="line"></div>
-        <table>
-          <thead>
-            <tr><th>Xizmat</th><th>Navbat</th></tr>
-          </thead>
-          <tbody>
-            ${items
-              .map(
-                (item) => `
-                  <tr>
-                    <td>${escapeHtml(item.service_name)}</td>
-                    <td>${escapeHtml(item.queue_code)}</td>
-                  </tr>
-                `,
-              )
-              .join('')}
-          </tbody>
-        </table>
+        ${items
+          .map(
+            (item) => `
+              <div class="ticket">
+                <div class="queue-hero">${escapeHtml(item.queue_code)}</div>
+                <div class="meta">
+                  <div class="meta-row"><span class="bold">Bemor:</span><span>${escapeHtml(item.patient_name || '-')}</span></div>
+                  <div class="meta-row"><span class="bold">Xizmat:</span><span>${escapeHtml(item.service_name || '-')}</span></div>
+                  <div class="meta-row"><span class="bold">Sana:</span><span>${escapeHtml(item.queue_date || '-')}</span></div>
+                  <div class="meta-row"><span class="bold">Chop etildi:</span><span>${escapeHtml(printedAt)}</span></div>
+                </div>
+              </div>
+            `,
+          )
+          .join('')}
         <div class="line"></div>
         <div class="center">Rahmat</div>
+        <div class="print-btn-wrap">
+          <button onclick="window.print()" style="font-size:12px; padding:4px 10px;">Print</button>
+        </div>
         <script>
-          window.onload = function () {
-            window.focus();
-            window.print();
-          };
+          function triggerPrint() {
+            setTimeout(function () {
+              window.focus();
+              window.print();
+            }, 450);
+          }
+          if (document.readyState === 'complete') {
+            triggerPrint();
+          } else {
+            window.addEventListener('load', triggerPrint);
+          }
         </script>
       </body>
     </html>
