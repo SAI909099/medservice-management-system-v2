@@ -63,6 +63,41 @@ Required GitHub Secrets:
 - `PROD_SSH_KEY`
 - `PROD_PROJECT_DIR` (optional, defaults to `/opt/medservice`)
 
+## Screenshots
+Add project screenshots to make the repository profile stronger.
+
+Suggested files:
+- `docs/assets/dashboard.png`
+- `docs/assets/registration.png`
+- `docs/assets/cashier.png`
+- `docs/assets/reports.png`
+
+Example markdown (update after you add images):
+```md
+![Dashboard](docs/assets/dashboard.png)
+![Registration](docs/assets/registration.png)
+![Cashier](docs/assets/cashier.png)
+![Reports](docs/assets/reports.png)
+```
+
+## Project Owner (Resume Style)
+**Role:** Full-Stack Developer  
+**Project:** Medservice Management System v2  
+**Focus:** Scalable clinic workflow platform with modular architecture and production deployment
+
+### Key Contributions
+- Designed modular backend architecture with Django apps by domain
+- Implemented billing/payment workflows and receipt printing flows
+- Built service queue and registration workflow improvements
+- Added production Docker deployment (`nginx + backend + postgres`)
+- Configured CI/CD with GitHub Actions for automated deploys
+
+### Operational Skills Demonstrated
+- API design and backend service layering (`services.py`, `selectors.py`)
+- Frontend feature delivery with React + TypeScript
+- Linux server operations, Docker, Nginx, PostgreSQL
+- Secure secret handling and SSH-based deployment automation
+
 ## Project Status
 Active development. Production deployment and automated pipelines are configured.
 
