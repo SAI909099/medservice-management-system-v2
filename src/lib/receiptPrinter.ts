@@ -1,3 +1,10 @@
+export interface ReceiptItem {
+  description: string;
+  quantity: number;
+  unit_price: string;
+  total_price: string;
+}
+
 export interface ReceiptPaymentAllocation {
   payment_id: number;
   receipt_no: string;
@@ -5,6 +12,7 @@ export interface ReceiptPaymentAllocation {
   charge_id: number;
   charge_source: 'qabul' | 'yotoq' | 'boshqa' | string;
   charge_date: string;
+  items?: ReceiptItem[];
 }
 
 export interface PaymentApplyResponse {
@@ -93,24 +101,29 @@ function buildReceiptHtml(payload: PaymentApplyResponse, options: PrintReceiptOp
         <div class="row"><span>Oldindan:</span><span>${money(payload.advance_amount)}</span></div>
         <div class="line"></div>
         <div class="bold">Taqsimot:</div>
-        <table>
-          <thead>
-            <tr><th>Manba</th><th>Sana</th><th>Summa</th></tr>
-          </thead>
-          <tbody>
-            ${payload.payments
-              .map(
-                (item) => `
-                  <tr>
-                    <td>${escapeHtml(sourceLabel[item.charge_source] || item.charge_source)}</td>
-                    <td>${escapeHtml(item.charge_date || '-')}</td>
-                    <td>${money(item.applied_amount)}</td>
-                  </tr>
-                `,
-              )
-              .join('')}
-          </tbody>
-        </table>
+        ${payload.payments
+          .map(
+            (item) => `
+              <div style="margin-top:4px;">
+                <div class="row muted"><span>${escapeHtml(sourceLabel[item.charge_source] || item.charge_source)}</span><span>${escapeHtml(item.charge_date || '-')}</span></div>
+                ${item.items && item.items.length > 0
+                  ? `<table style="font-size:9px;">
+                      ${item.items.map(i => `
+                        <tr>
+                          <td style="padding-left:4px;">${escapeHtml(i.description)}</td>
+                          <td>${i.quantity}x</td>
+                          <td>${money(i.total_price)}</td>
+                        </tr>
+                      `).join('')}
+                    </table>`
+                  : ''}
+                <div class="row bold" style="border-top:1px solid #ddd; margin-top:2px; padding-top:2px;">
+                  <span>Jami:</span><span>${money(item.applied_amount)}</span>
+                </div>
+              </div>
+            `,
+          )
+          .join('')}
         <div class="line"></div>
         <div><span class="muted">Izoh:</span> ${escapeHtml(note)}</div>
         <div class="center muted" style="margin-top:4px;">Rahmat!</div>

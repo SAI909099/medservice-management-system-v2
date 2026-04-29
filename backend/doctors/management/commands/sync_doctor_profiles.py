@@ -8,7 +8,7 @@ class Command(BaseCommand):
     help = "Create missing Doctor profiles for users with doctor role"
 
     def handle(self, *args, **options):
-        users = User.objects.filter(role__name=Role.Name.DOCTOR, is_active=True)
+        users = User.objects.filter(role__name="doctor", is_active=True)
         created_count = 0
         for user in users:
             _, created = Doctor.objects.get_or_create(

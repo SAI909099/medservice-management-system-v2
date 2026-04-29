@@ -60,6 +60,17 @@ interface FinancePayload {
   };
 }
 
+interface Doctor {
+  id: number;
+  user_full_name: string;
+}
+
+interface ReferringDoctor {
+  id: number;
+  full_name: string;
+  clinic_name: string;
+}
+
 const methodLabel: Record<string, string> = {
   cash: 'Naqd',
   card: 'Karta',
@@ -81,8 +92,11 @@ const expenseCategories = [
   "Jihoz xaridi",
   'Dori-darmon',
   'Transport',
+  'Shifokor bonusi',
   'Boshqa',
 ] as const;
+
+const paymentMethods = ['cash', 'card', 'transfer'] as const;
 
 export function Accountant() {
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -94,8 +108,13 @@ export function Accountant() {
   const [incomePage, setIncomePage] = useState(1);
   const [outputPage, setOutputPage] = useState(1);
   const [data, setData] = useState<FinancePayload | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [referringDoctors, setReferringDoctors] = useState<ReferringDoctor[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [bulkMode, setBulkMode] = useState(false);
+  const [showAddDoctor, setShowAddDoctor] = useState(false);
+  const [newDoctor, setNewDoctor] = useState({ full_name: '', phone: '', clinic_name: '' });
   const [expenseForm, setExpenseForm] = useState({
     description: '',
     category: expenseCategories[0],
@@ -103,7 +122,40 @@ export function Accountant() {
     note: '',
     amount: '',
     spent_at: new Date().toISOString().slice(0, 10),
+    doctor_id: '',
+    payment_method: 'cash',
   });
+
+  useEffect(() => {
+    async function loadDoctors() {
+      try {
+        const doctorsRes = await apiRequest<{ results: Doctor[] }>('/doctors/simple_list/');
+        console.log('Doctors response:', doctorsRes);
+        if (doctorsRes?.results) {
+          setDoctors(doctorsRes.results);
+        } else if (Array.isArray(doctorsRes)) {
+          setDoctors(doctorsRes);
+        } else {
+          setDoctors([]);
+        }
+        
+        const refDoctorsRes = await apiRequest<{ results: ReferringDoctor[] }>('/referring-doctors/');
+        console.log('Referring doctors response:', refDoctorsRes);
+        if (refDoctorsRes?.results) {
+          setReferringDoctors(refDoctorsRes.results);
+        } else if (Array.isArray(refDoctorsRes)) {
+          setReferringDoctors(refDoctorsRes);
+        } else {
+          setReferringDoctors([]);
+        }
+      } catch (e) {
+        console.error('Error loading doctors:', e);
+        setDoctors([]);
+        setReferringDoctors([]);
+      }
+    }
+    loadDoctors();
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -149,17 +201,56 @@ export function Accountant() {
     e.preventDefault();
     setMessage('');
     try {
-      await apiRequest('/report-expenses/', {
-        method: 'POST',
-        body: JSON.stringify({
+      if (expenseForm.category === 'Shifokor bonusi' && bulkMode) {
+        const internalCount = doctors.length;
+        const externalCount = referringDoctors.length;
+        const totalCount = internalCount + externalCount;
+        if (totalCount === 0) {
+          setMessage("Shifokor topilmadi.");
+          return;
+        }
+        const doctorList = doctors.map(d => `i:${d.id}`).join(', ');
+        const refList = referringDoctors.map(r => `r:${r.id}`).join(', ');
+        const note = `Jami ${totalCount} ta shifokor (${internalCount} ichki, ${externalCount} tashqi). ${expenseForm.note.trim() ? '\n' + expenseForm.note.trim() : ''}\nShifokorlar: ${doctorList}${refList ? '; ' + refList : ''}`;
+        await apiRequest('/report-expenses/', {
+          method: 'POST',
+          body: JSON.stringify({
+            source: 'accountant',
+            description: `Shifokorlar bonusi (${totalCount} kishi)`,
+            category: 'Shifokor bonusi',
+            note: note,
+            amount: expenseForm.amount,
+            spent_at: expenseForm.spent_at,
+          }),
+        });
+        setMessage(`${totalCount} ta shifokorga jami ${Number(expenseForm.amount).toLocaleString()} so'm bonus ajratildi.`);
+      } else {
+        const payload: Record<string, string> = {
           source: 'accountant',
           description: expenseForm.description.trim() || 'Chiqim',
           category: expenseForm.category === 'Boshqa' ? expenseForm.customCategory.trim() : expenseForm.category,
           note: expenseForm.note.trim(),
           amount: expenseForm.amount,
           spent_at: expenseForm.spent_at,
-        }),
-      });
+        };
+        if (expenseForm.category === 'Shifokor bonusi' && expenseForm.doctor_id) {
+          const [type, id] = expenseForm.doctor_id.split(':');
+          if (type === 'i') {
+            const doc = doctors.find(d => String(d.id) === id);
+            payload.description = `Bonusi: ${doc?.user_full_name || 'Shifokor'}`;
+            payload.note = (expenseForm.note.trim() ? expenseForm.note.trim() + '\n' : '') + `doctor_id:i:${id}`;
+          } else {
+            const ref = referringDoctors.find(r => String(r.id) === id);
+            payload.description = `Bonusi: ${ref?.full_name || 'Shifokor'}`;
+            payload.note = (expenseForm.note.trim() ? expenseForm.note.trim() + '\n' : '') + `doctor_id:r:${id}`;
+          }
+        }
+        await apiRequest('/report-expenses/', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setMessage("Chiqim saqlandi.");
+      }
       setExpenseForm({
         description: '',
         category: expenseCategories[0],
@@ -167,11 +258,38 @@ export function Accountant() {
         note: '',
         amount: '',
         spent_at: new Date().toISOString().slice(0, 10),
+        doctor_id: '',
+        payment_method: 'cash',
       });
-      setMessage("Chiqim saqlandi.");
       await loadData();
-    } catch {
+    } catch (err) {
       setMessage("Chiqimni saqlashda xatolik.");
+      console.error(err);
+    }
+  };
+
+  const addReferringDoctor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDoctor.full_name.trim()) {
+      setMessage("Shifokor ismi kiritilishi shart.");
+      return;
+    }
+    try {
+      await apiRequest('/referring-doctors/', {
+        method: 'POST',
+        body: JSON.stringify({
+          full_name: newDoctor.full_name.trim(),
+          phone: newDoctor.phone.trim(),
+          clinic_name: newDoctor.clinic_name.trim(),
+        }),
+      });
+      setNewDoctor({ full_name: '', phone: '', clinic_name: '' });
+      setShowAddDoctor(false);
+      setMessage("Tashqi shifokor qo'shildi.");
+      const res = await apiRequest<{ results: ReferringDoctor[] }>('/referring-doctors/');
+      setReferringDoctors(Array.isArray(res?.results) ? res.results : []);
+    } catch {
+      setMessage("Shifokor qo'shishda xatolik.");
     }
   };
 
@@ -433,6 +551,107 @@ export function Accountant() {
                 required
               />
             ) : null}
+
+            {expenseForm.category === 'Shifokor bonusi' ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={bulkMode}
+                      onChange={(e) => setBulkMode(e.target.checked)}
+                    />
+                    Barcha shifokorlarga bir xil suma berish
+                  </label>
+                </div>
+                
+                {bulkMode ? (
+                  <div className="rounded border border-amber-200 bg-amber-50 p-3 space-y-2">
+                    <p className="text-sm font-medium">Barcha shifokorlarga bonus:</p>
+                    <div className="text-xs text-gray-600">
+                      Ichki shifokorlar: {doctors.length} ta
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Tashqi shifokorlar (yo'naltiruvchi): {referringDoctors.length} ta
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      className="w-full rounded border px-3 py-2 text-sm"
+                      value={expenseForm.doctor_id}
+                      onChange={(e) => setExpenseForm((p) => ({ ...p, doctor_id: e.target.value }))}
+                      required
+                    >
+                      <option value="">Shifokorni tanlang</option>
+                      <optgroup label="Ichki shifokorlar">
+                        {doctors.map((doc) => (
+                          <option key={`internal-${doc.id}`} value={`i:${doc.id}`}>
+                            {doc.user_full_name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Tashqi shifokorlar (yo'naltiruvchi)">
+                        {referringDoctors.map((ref) => (
+                          <option key={`ref-${ref.id}`} value={`r:${ref.id}`}>
+                            {ref.full_name} {ref.clinic_name ? `(${ref.clinic_name})` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                    {!showAddDoctor ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddDoctor(true)}
+                        className="text-xs text-teal-600 hover:underline"
+                      >
+                        + Yangi tashqi shifokor qo'shish
+                      </button>
+                    ) : (
+                      <div className="rounded border border-teal-200 bg-teal-50 p-2 space-y-2">
+                        <input
+                          className="w-full rounded border px-2 py-1 text-sm"
+                          placeholder="Shifokor FIO"
+                          value={newDoctor.full_name}
+                          onChange={(e) => setNewDoctor((p) => ({ ...p, full_name: e.target.value }))}
+                        />
+                        <input
+                          className="w-full rounded border px-2 py-1 text-sm"
+                          placeholder="Telefon (ixtiyoriy)"
+                          value={newDoctor.phone}
+                          onChange={(e) => setNewDoctor((p) => ({ ...p, phone: e.target.value }))}
+                        />
+                        <input
+                          className="w-full rounded border px-2 py-1 text-sm"
+                          placeholder="Klinika nomi (ixtiyoriy)"
+                          value={newDoctor.clinic_name}
+                          onChange={(e) => setNewDoctor((p) => ({ ...p, clinic_name: e.target.value }))}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={addReferringDoctor}
+                            className="rounded bg-teal-600 px-2 py-1 text-xs text-white"
+                          >
+                            Saqlash
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddDoctor(false);
+                              setNewDoctor({ full_name: '', phone: '', clinic_name: '' });
+                            }}
+                            className="rounded border border-gray-300 px-2 py-1 text-xs"
+                          >
+                            Bekor
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
             <textarea
               className="w-full rounded border px-3 py-2 text-sm"
               placeholder="Qo'shimcha ma'lumot (ixtiyoriy)"
@@ -440,7 +659,7 @@ export function Accountant() {
               onChange={(e) => setExpenseForm((p) => ({ ...p, note: e.target.value }))}
               rows={3}
             />
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <input
                 className="w-full rounded border px-3 py-2 text-sm"
                 type="number"
@@ -451,6 +670,17 @@ export function Accountant() {
                 onChange={(e) => setExpenseForm((p) => ({ ...p, amount: e.target.value }))}
                 required
               />
+              <select
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={expenseForm.payment_method}
+                onChange={(e) => setExpenseForm((p) => ({ ...p, payment_method: e.target.value }))}
+              >
+                {paymentMethods.map((m) => (
+                  <option key={m} value={m}>
+                    {methodLabel[m]}
+                  </option>
+                ))}
+              </select>
               <input
                 className="w-full rounded border px-3 py-2 text-sm"
                 type="date"

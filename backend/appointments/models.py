@@ -15,6 +15,7 @@ class Appointment(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     complaint = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    referring_doctor = models.CharField(max_length=200, blank=True, verbose_name="Yuborgan shifokor")
     created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="appointments_created")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -38,6 +39,7 @@ class ServiceQueueTicket(models.Model):
     sequence_number = models.PositiveIntegerField()
     queue_code = models.CharField(max_length=16)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.WAITING)
+    referring_doctor = models.CharField(max_length=200, blank=True, verbose_name="Yuborgan shifokor")
     created_by = models.ForeignKey(
         "accounts.User",
         on_delete=models.SET_NULL,
@@ -58,3 +60,17 @@ class ServiceQueueTicket(models.Model):
 
     def __str__(self) -> str:
         return f"{self.service.name} {self.queue_code}"
+
+
+class ReferringDoctor(models.Model):
+    full_name = models.CharField(max_length=200)
+    phone = models.CharField(max_length=20, blank=True)
+    clinic_name = models.CharField(max_length=200, blank=True, verbose_name="Klinika nomi")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["full_name"]
+
+    def __str__(self) -> str:
+        return self.full_name

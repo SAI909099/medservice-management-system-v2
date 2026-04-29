@@ -1,10 +1,10 @@
 from rest_framework import serializers
 from django.utils import timezone
 
-from billing.models import Service
+from billing.models import Service, ServiceOption
 from doctors.models import Doctor
 
-from .models import Appointment, ServiceQueueTicket
+from .models import Appointment, ReferringDoctor, ServiceQueueTicket
 from .services import validate_appointment_datetime
 
 
@@ -28,70 +28,50 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "status",
             "complaint",
             "notes",
-            "created_by",
+            "referring_doctor",
             "created_at",
         ]
-        read_only_fields = ["created_by", "created_at"]
-        extra_kwargs = {
-            "scheduled_at": {"required": False},
-        }
-
-    def validate_scheduled_at(self, value):
-        validate_appointment_datetime(value)
-        return value
 
     def get_patient_name(self, obj):
         return str(obj.patient)
 
     def get_doctor_name(self, obj):
-        return str(obj.doctor)
+        return obj.doctor.user.get_full_name() or obj.doctor.user.username
+
+
+class ServiceOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ServiceOption
+        fields = ["id", "name", "price", "is_active"]
+
+
+class ServiceOptionInputSerializer(serializers.Serializer):
+    service_id = serializers.IntegerField()
+    option_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
 
 
 class AppointmentRegisterSerializer(serializers.Serializer):
-    first_name = serializers.CharField(max_length=100)
-    last_name = serializers.CharField(max_length=100)
-    gender = serializers.CharField(max_length=10)
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    gender = serializers.ChoiceField(choices=["erkak", "ayol"])
     birth_year = serializers.IntegerField(required=False, allow_null=True)
-    phone = serializers.CharField(max_length=20)
-    address = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    phone = serializers.CharField(required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
     complaint = serializers.CharField(required=False, allow_blank=True)
-    doctor = serializers.PrimaryKeyRelatedField(
-        queryset=Doctor.objects.filter(is_active=True),
-        required=False,
-        allow_null=True,
-    )
-    service_ids = serializers.ListField(
-        child=serializers.IntegerField(min_value=1),
-        required=False,
-        allow_empty=True,
-        default=list,
-    )
-
-    def validate_birth_year(self, value):
-        if value is None:
-            return value
-        current_year = timezone.localdate().year
-        if value < 1900 or value > current_year:
-            raise serializers.ValidationError("Tug'ilgan yil noto'g'ri.")
-        return value
+    doctor = serializers.IntegerField(required=False, allow_null=True)
+    referring_doctor = serializers.CharField(required=False, allow_blank=True)
+    service_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
+    service_options = ServiceOptionInputSerializer(many=True, required=False)
 
     def validate(self, attrs):
-        service_ids = list(dict.fromkeys(attrs.get("service_ids", [])))
-        attrs["services"] = []
-        doctor = attrs.get("doctor")
-
-        if not service_ids and doctor is None:
-            raise serializers.ValidationError({"detail": "Shifokor yoki kamida bitta xizmat tanlanishi kerak."})
-
-        if not service_ids:
-            return attrs
-
-        services = list(Service.objects.filter(id__in=service_ids, is_active=True).order_by("id"))
-        if len(services) != len(service_ids):
-            raise serializers.ValidationError({"service_ids": "Xizmatlardan biri topilmadi yoki nofaol."})
-        attrs["service_ids"] = service_ids
-        attrs["services"] = services
         return attrs
+
+    def validate_service_ids(self, service_ids):
+        services = Service.objects.filter(id__in=service_ids, is_active=True)
+        if services.count() != len(service_ids):
+            raise serializers.ValidationError("Ba'zi xizmatlar topilmadi yoki faol emas.")
+        attrs["services"] = services
+        return service_ids
 
 
 class ServiceQueueTicketSerializer(serializers.ModelSerializer):
@@ -116,3 +96,9 @@ class ServiceQueueTicketSerializer(serializers.ModelSerializer):
 
     def get_patient_name(self, obj):
         return str(obj.patient)
+
+
+class ReferringDoctorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReferringDoctor
+        fields = ["id", "full_name", "phone", "clinic_name", "is_active"]

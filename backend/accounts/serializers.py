@@ -15,6 +15,17 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "description"]
 
 
+class RoleCreateUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Role
+        fields = ["id", "name", "description"]
+
+    def validate_name(self, value):
+        if Role.objects.filter(name=value).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError("Bunday rol nomi allaqachon mavjud.")
+        return value.lower().replace(" ", "_")
+
+
 class UserSerializer(serializers.ModelSerializer):
     role = RoleSerializer(read_only=True)
     allowed_pages = serializers.SerializerMethodField()
@@ -62,7 +73,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         allowed_pages = validated_data.pop("allowed_pages", None)
         password = validated_data.pop("password")
         user = User.objects.create_user(password=password, **validated_data)
-        if getattr(user.role, "name", None) == Role.Name.DOCTOR and not hasattr(user, "doctor_profile"):
+        if getattr(user.role, "name", None) == "doctor" and not hasattr(user, "doctor_profile"):
             Doctor.objects.create(
                 user=user,
                 clinic=user.clinic,

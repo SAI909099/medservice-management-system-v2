@@ -19,6 +19,7 @@ import { CashRegister } from './pages/CashRegister';
 import { Accountant } from './pages/Accountant';
 import { IncomeAnalytics } from './pages/IncomeAnalytics';
 import { ServiceQueue } from './pages/ServiceQueue';
+import { MRTQueue } from './pages/MRTQueue';
 
 // Mock empty pages for links in sidebar
 function ComingSoon({ title }: { title: string }) {
@@ -98,6 +99,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/mrt-queue" element={<MRTQueue />} />
         <Route path="/" element={<ProtectedLayout />}>
           <Route index element={<HomePageResolver />} />
           <Route path="patients" element={<ProtectedPage pageCode="patients" element={<Patients />} />} />

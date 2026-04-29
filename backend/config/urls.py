@@ -3,7 +3,7 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
-from appointments.views import AppointmentViewSet
+from appointments.views import AppointmentViewSet, ReferringDoctorViewSet
 from billing.views import ChargeViewSet, PaymentViewSet, ReceiptView, ServiceViewSet
 from clinics.views import BranchViewSet, ClinicViewSet
 from doctors.views import DoctorPricingViewSet, DoctorScheduleViewSet, DoctorViewSet
@@ -29,6 +29,7 @@ router.register(r"charges", ChargeViewSet, basename="charge")
 router.register(r"payments", PaymentViewSet, basename="payment")
 router.register(r"services", ServiceViewSet, basename="service")
 router.register(r"report-expenses", ExpenseViewSet, basename="report-expense")
+router.register(r"referring-doctors", ReferringDoctorViewSet, basename="referring-doctor")
 
 urlpatterns = [
     path("admin/", admin.site.urls),

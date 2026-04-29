@@ -9,10 +9,24 @@ class Service(models.Model):
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=100, blank=True)
     price = models.DecimalField(max_digits=12, decimal_places=2)
+    has_options = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
     def __str__(self) -> str:
         return self.name
+
+
+class ServiceOption(models.Model):
+    service = models.ForeignKey(Service, on_delete=models.CASCADE, related_name="options")
+    name = models.CharField(max_length=100)
+    price = models.DecimalField(max_digits=12, decimal_places=2)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ["service", "name"]
+
+    def __str__(self) -> str:
+        return f"{self.service.name} - {self.name}"
 
 
 class Charge(models.Model):

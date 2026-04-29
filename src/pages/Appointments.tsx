@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '@/lib/api';
-import { Paginated } from '@/lib/types';
+import { Paginated, ApiServiceOption } from '@/lib/types';
 import { printServiceQueueTickets } from '@/lib/serviceQueuePrinter';
 
 type DoctorOption = {
@@ -21,6 +21,8 @@ type ServiceOption = {
   name: string;
   category: string;
   price: string;
+  has_options: boolean;
+  options?: ApiServiceOption[];
 };
 
 type StaffOptionsResponse = {
@@ -58,6 +60,7 @@ type RegistrationForm = {
   address: string;
   reason: string;
   doctor: string;
+  referring_doctor: string;
   service_ids: number[];
 };
 
@@ -82,8 +85,11 @@ export function Appointments() {
     address: '',
     reason: '',
     doctor: '',
+    referring_doctor: '',
     service_ids: [],
   });
+  const [serviceOptionsMap, setServiceOptionsMap] = useState<Record<number, number[]>>({});
+  const [optionsModalService, setOptionsModalService] = useState<ServiceOption | null>(null);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [labStaff, setLabStaff] = useState<LabStaffOption[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
@@ -94,11 +100,22 @@ export function Appointments() {
 
   const totalAmount = useMemo(() => {
     const doctorPrice = Number(doctors.find((d) => String(d.id) === form.doctor)?.appointment_price || 0);
-    const servicesTotal = services
+    let servicesTotal = 0;
+
+    services
       .filter((service) => form.service_ids.includes(service.id))
-      .reduce((acc, service) => acc + Number(service.price || 0), 0);
+      .forEach((service) => {
+        if (service.has_options && service.options) {
+          const selectedOptionIds = serviceOptionsMap[service.id] || [];
+          const selectedOptions = service.options.filter((opt) => selectedOptionIds.includes(opt.id));
+          servicesTotal += selectedOptions.reduce((sum, opt) => sum + Number(opt.price || 0), 0);
+        } else {
+          servicesTotal += Number(service.price || 0);
+        }
+      });
+
     return doctorPrice + servicesTotal;
-  }, [doctors, services, form.doctor, form.service_ids]);
+  }, [doctors, services, form.doctor, form.service_ids, serviceOptionsMap]);
 
   const loadInitial = async () => {
     const [staffRes, appointmentRes] = await Promise.all([
@@ -120,6 +137,14 @@ export function Appointments() {
     });
   }, []);
 
+  const handleServiceClick = (service: ServiceOption) => {
+    if (service.has_options && service.options && service.options.length > 0) {
+      setOptionsModalService(service);
+    } else {
+      toggleService(service.id);
+    }
+  };
+
   const toggleService = (serviceId: number) => {
     setForm((prev) => ({
       ...prev,
@@ -127,12 +152,53 @@ export function Appointments() {
         ? prev.service_ids.filter((id) => id !== serviceId)
         : [...prev.service_ids, serviceId],
     }));
+    if (!form.service_ids.includes(serviceId)) {
+      setServiceOptionsMap((prev) => {
+        const newMap = { ...prev };
+        delete newMap[serviceId];
+        return newMap;
+      });
+    }
+  };
+
+  const toggleOption = (optionId: number) => {
+    if (!optionsModalService) return;
+    setServiceOptionsMap((prev) => {
+      const current = prev[optionsModalService.id] || [];
+      const updated = current.includes(optionId)
+        ? current.filter((id) => id !== optionId)
+        : [...current, optionId];
+      return { ...prev, [optionsModalService.id]: updated };
+    });
+  };
+
+  const confirmOptions = () => {
+    if (!optionsModalService) return;
+    const selectedOptions = serviceOptionsMap[optionsModalService.id] || [];
+    if (selectedOptions.length > 0) {
+      if (!form.service_ids.includes(optionsModalService.id)) {
+        setForm((prev) => ({ ...prev, service_ids: [...prev.service_ids, optionsModalService.id] }));
+      }
+    } else {
+      setForm((prev) => ({ ...prev, service_ids: prev.service_ids.filter((id) => id !== optionsModalService.id) }));
+    }
+    setOptionsModalService(null);
   };
 
   const submitRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setMessage('');
+
+    const serviceOptionsPayload: { service_id: number; option_ids: number[] }[] = [];
+    services.forEach((service) => {
+      if (form.service_ids.includes(service.id) && service.has_options) {
+        const selectedOptionIds = serviceOptionsMap[service.id] || [];
+        if (selectedOptionIds.length > 0) {
+          serviceOptionsPayload.push({ service_id: service.id, option_ids: selectedOptionIds });
+        }
+      }
+    });
 
     try {
       const birthYearNum = form.birth_year ? Number(form.birth_year) : null;
@@ -155,7 +221,9 @@ export function Appointments() {
           address: form.address,
           complaint: form.reason,
           doctor: form.doctor ? Number(form.doctor) : null,
+          referring_doctor: form.referring_doctor,
           service_ids: form.service_ids,
+          service_options: serviceOptionsPayload,
         }),
       });
 
@@ -180,14 +248,30 @@ export function Appointments() {
         address: '',
         reason: '',
         doctor: '',
+        referring_doctor: '',
         service_ids: [],
       });
+      setServiceOptionsMap({});
       await loadInitial();
     } catch (error) {
       setMessage(extractApiError(error));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const getServiceDisplayPrice = (service: ServiceOption): string => {
+    if (service.has_options && service.options) {
+      const selectedOptionIds = serviceOptionsMap[service.id] || [];
+      if (selectedOptionIds.length > 0) {
+        const total = service.options
+          .filter((opt) => selectedOptionIds.includes(opt.id))
+          .reduce((sum, opt) => sum + Number(opt.price || 0), 0);
+        return `${total.toLocaleString()} so'm`;
+      }
+      return 'Variant tanlash';
+    }
+    return `${Number(service.price || 0).toLocaleString()} so'm`;
   };
 
   return (
@@ -235,6 +319,12 @@ export function Appointments() {
               ))}
             </optgroup>
           </select>
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Yuborgan shifokor (ixtiyoriy)"
+            value={form.referring_doctor}
+            onChange={(e) => setForm({ ...form, referring_doctor: e.target.value })}
+          />
           <div className="border rounded px-3 py-2 bg-teal-50 text-sm text-teal-800 flex items-center">
             Qabul vaqti: avtomatik hozirgi vaqt (now)
           </div>
@@ -242,17 +332,29 @@ export function Appointments() {
             <p className="mb-2 text-sm font-medium text-gray-700">Qo'shimcha xizmatlar (MRT, UZI va boshqalar)</p>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {services.map((service) => (
-                <label key={service.id} className="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm">
+                <div
+                  key={service.id}
+                  className={`flex items-center justify-between rounded border px-3 py-2 text-sm cursor-pointer transition-colors ${
+                    form.service_ids.includes(service.id)
+                      ? 'bg-teal-50 border-teal-300'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                  onClick={() => handleServiceClick(service)}
+                >
                   <span className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={form.service_ids.includes(service.id)}
-                      onChange={() => toggleService(service.id)}
+                      onChange={() => {}}
+                      disabled
                     />
                     <span>{service.name}</span>
+                    {service.has_options && <span className="text-xs text-amber-600">(variantlari bor)</span>}
                   </span>
-                  <span className="text-teal-700">{Number(service.price || 0).toLocaleString()} so'm</span>
-                </label>
+                  <span className={`${form.service_ids.includes(service.id) && service.has_options ? 'text-teal-700' : 'text-gray-600'}`}>
+                    {getServiceDisplayPrice(service)}
+                  </span>
+                </div>
               ))}
               {services.length === 0 ? <p className="text-sm text-gray-500">Faol xizmatlar topilmadi.</p> : null}
             </div>
@@ -319,6 +421,52 @@ export function Appointments() {
           </tbody>
         </table>
       </div>
+
+      {optionsModalService && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">{optionsModalService.name} - variantlarini tanlang</h3>
+              <button className="text-gray-500 hover:text-gray-700" onClick={() => setOptionsModalService(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+              {optionsModalService.options?.map((opt) => (
+                <label
+                  key={opt.id}
+                  className={`flex items-center justify-between rounded border px-3 py-2 cursor-pointer ${
+                    (serviceOptionsMap[optionsModalService.id] || []).includes(opt.id)
+                      ? 'bg-teal-50 border-teal-300'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={(serviceOptionsMap[optionsModalService.id] || []).includes(opt.id)}
+                      onChange={() => toggleOption(opt.id)}
+                    />
+                    <span>{opt.name}</span>
+                  </span>
+                  <span className="text-teal-700 font-medium">{Number(opt.price).toLocaleString()} so'm</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-50"
+                onClick={() => setOptionsModalService(null)}
+              >
+                Bekor qilish
+              </button>
+              <button className="rounded bg-teal-700 text-white px-4 py-2 hover:bg-teal-600" onClick={confirmOptions}>
+                Tasdiqlash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

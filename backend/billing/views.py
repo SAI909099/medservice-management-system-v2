@@ -4,18 +4,18 @@ from rest_framework import decorators, generics, response, status, viewsets
 
 from accounts.permissions import PageAccessPermission, RoleBasedPermission
 
-from .models import Charge, Payment, Service
+from .models import Charge, Payment, Service, ServiceOption
 from .selectors import (
     get_patient_ledger_print_data,
     get_patient_ledger_rows,
     get_treatment_room_patient_rows,
 )
-from .serializers import ChargeSerializer, PaymentSerializer, ReceiptSerializer, ServiceSerializer
+from .serializers import ChargeSerializer, PaymentSerializer, ReceiptSerializer, ServiceOptionSerializer, ServiceSerializer
 from .services import apply_patient_payment, apply_treatment_patient_payment, create_daily_treatment_room_charges
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
-    queryset = Service.objects.all()
+    queryset = Service.objects.prefetch_related("options").all()
     serializer_class = ServiceSerializer
     permission_classes = [RoleBasedPermission, PageAccessPermission]
     filterset_fields = ["category", "is_active"]
@@ -30,6 +30,24 @@ class ServiceViewSet(viewsets.ModelViewSet):
         if self.action in {"list", "retrieve"}:
             return "appointments"
         return "pricing"
+
+    @decorators.action(detail=True, methods=["post"], url_path="options")
+    def create_option(self, request, pk=None):
+        service = self.get_object()
+        serializer = ServiceOptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        option = serializer.save(service=service)
+        return response.Response(ServiceOptionSerializer(option).data, status=status.HTTP_201_CREATED)
+
+    @decorators.action(detail=True, methods=["delete"], url_path=r"options/(?P<option_id>[^/.]+)")
+    def delete_option(self, request, pk=None, option_id=None):
+        service = self.get_object()
+        try:
+            option = service.options.get(id=option_id)
+        except ServiceOption.DoesNotExist:
+            return response.Response({"detail": "Option topilmadi."}, status=status.HTTP_404_NOT_FOUND)
+        option.delete()
+        return response.Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ChargeViewSet(viewsets.ModelViewSet):

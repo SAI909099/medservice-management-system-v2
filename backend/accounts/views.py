@@ -8,6 +8,7 @@ from .models import Role
 from .page_permissions import PAGE_PERMISSIONS, ROLE_DEFAULT_PAGES
 from .permissions import IsAdminManager, PageAccessPermission
 from .serializers import (
+    RoleCreateUpdateSerializer,
     RoleSerializer,
     UserCreateSerializer,
     UserPasswordUpdateSerializer,
@@ -102,3 +103,22 @@ class UserPasswordUpdateView(generics.UpdateAPIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"detail": "Parol yangilandi."})
+
+
+class RoleListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAdminManager, PageAccessPermission]
+    required_page = "settings_users"
+    queryset = Role.objects.all()
+    serializer_class = RoleSerializer
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return RoleCreateUpdateSerializer
+        return RoleSerializer
+
+
+class RoleCreateView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAdminManager, PageAccessPermission]
+    required_page = "settings_users"
+    queryset = Role.objects.all()
+    serializer_class = RoleCreateUpdateSerializer

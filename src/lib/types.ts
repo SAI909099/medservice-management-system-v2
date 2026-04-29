@@ -42,11 +42,20 @@ export interface ApiDoctor {
   is_active: boolean;
 }
 
+export interface ApiServiceOption {
+  id: number;
+  name: string;
+  price: string;
+  is_active: boolean;
+}
+
 export interface ApiService {
   id: number;
   code: string;
   name: string;
   category: string;
   price: string;
+  has_options: boolean;
   is_active: boolean;
+  options?: ApiServiceOption[];
 }

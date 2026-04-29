@@ -296,6 +296,7 @@ def apply_patient_payment(
     patient = queryset.first().patient if queryset.exists() else None
     payments_payload = []
     for payment, charge, pay_amount in created_payments:
+        items = list(charge.items.all())
         payments_payload.append(
             {
                 "payment_id": payment.id,
@@ -304,6 +305,15 @@ def apply_patient_payment(
                 "charge_id": charge.id,
                 "charge_source": _charge_source_label(charge),
                 "charge_date": charge.created_at.date().isoformat(),
+                "items": [
+                    {
+                        "description": item.description,
+                        "quantity": item.quantity,
+                        "unit_price": str(item.unit_price),
+                        "total_price": str(item.total_price),
+                    }
+                    for item in items
+                ],
             }
         )
 

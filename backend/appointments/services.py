@@ -77,7 +77,7 @@ def _queue_prefix_from_service_code(service: Service) -> str:
     return "X"
 
 
-def _create_service_queue_ticket(*, user, patient: Patient, service: Service, appointment: Appointment | None, queue_date: date):
+def _create_service_queue_ticket(*, user, patient: Patient, service: Service, appointment: Appointment | None, queue_date: date, referring_doctor: str = ""):
     prefix = _queue_prefix_from_service_code(service)
 
     for _ in range(5):
@@ -97,6 +97,7 @@ def _create_service_queue_ticket(*, user, patient: Patient, service: Service, ap
                 queue_date=queue_date,
                 sequence_number=next_sequence,
                 queue_code=queue_code,
+                referring_doctor=referring_doctor,
                 created_by=user,
             )
         except IntegrityError:
@@ -117,7 +118,12 @@ def register_patient_appointment_with_charges(
     complaint: str,
     doctor: Doctor | None,
     services: list[Service],
+    service_options_map: dict = None,
+    referring_doctor: str = "",
 ):
+    if service_options_map is None:
+        service_options_map = {}
+
     queue_date = timezone.localdate()
     birth_date, age = _build_patient_birth_fields(birth_year)
     patient = Patient.objects.create(
@@ -139,12 +145,36 @@ def register_patient_appointment_with_charges(
             doctor=doctor,
             scheduled_at=timezone.now(),
             complaint=complaint.strip(),
+            referring_doctor=referring_doctor.strip() if referring_doctor else "",
             created_by=user,
         )
 
     created_charge_ids: list[int] = []
     appointment_total = Decimal(doctor.appointment_price or 0) if doctor else Decimal("0.00")
-    service_total = sum((Decimal(service.price or 0) for service in services), Decimal("0.00"))
+
+    service_items = []
+    service_total = Decimal("0.00")
+    for service in services:
+        options = service_options_map.get(service.id, [])
+        if options:
+            for opt in options:
+                service_items.append({
+                    "service": None,
+                    "description": f"{service.name} - {opt.name}",
+                    "quantity": 1,
+                    "unit_price": Decimal(opt.price or 0),
+                    "total_price": Decimal(opt.price or 0),
+                })
+                service_total += Decimal(opt.price or 0)
+        else:
+            service_items.append({
+                "service": service,
+                "description": service.name,
+                "quantity": 1,
+                "unit_price": Decimal(service.price or 0),
+                "total_price": Decimal(service.price or 0),
+            })
+            service_total += Decimal(service.price or 0)
 
     if doctor is not None:
         appointment_charge = _create_charge_with_items(
@@ -162,24 +192,15 @@ def register_patient_appointment_with_charges(
         )
         created_charge_ids.append(appointment_charge.id)
 
-    if services:
-        service_items = [
-            {
-                "service": service,
-                "description": service.name,
-                "quantity": 1,
-                "unit_price": Decimal(service.price or 0),
-                "total_price": Decimal(service.price or 0),
-            }
-            for service in services
-        ]
+    if service_items:
         service_charge = _create_charge_with_items(
             patient=patient,
             appointment=appointment,
-            notes="Ro'yxatga olishdagi qo'shimcha xizmatlar",
+            notes="Ro'yxatga olishdagi xizmatlar",
             items=service_items,
         )
         created_charge_ids.append(service_charge.id)
+
     queue_tickets = []
     for service in services:
         queue_tickets.append(
@@ -189,6 +210,7 @@ def register_patient_appointment_with_charges(
                 service=service,
                 appointment=appointment,
                 queue_date=queue_date,
+                referring_doctor=referring_doctor,
             )
         )
 

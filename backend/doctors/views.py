@@ -1,6 +1,7 @@
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import decorators, mixins, response, viewsets
+from rest_framework.permissions import IsAuthenticated
 
 from accounts.permissions import PageAccessPermission, RoleBasedPermission
 from appointments.models import Appointment
@@ -19,6 +20,15 @@ class DoctorViewSet(viewsets.ModelViewSet):
     allowed_roles = ["admin", "registrator", "doctor"]
     filterset_fields = ["clinic", "branch", "specialty", "is_active"]
     search_fields = ["user__first_name", "user__last_name", "specialty"]
+
+    @decorators.action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
+    def simple_list(self, request):
+        doctors = Doctor.objects.filter(is_active=True).select_related("user")
+        data = [
+            {"id": d.id, "user_full_name": d.user.get_full_name() or d.user.username}
+            for d in doctors
+        ]
+        return response.Response({"results": data})
 
     @decorators.action(detail=True, methods=["get"])
     def worklist(self, request, pk=None):

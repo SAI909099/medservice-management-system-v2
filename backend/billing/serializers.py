@@ -2,14 +2,22 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import Charge, ChargeItem, Payment, Receipt, Service
+from .models import Charge, ChargeItem, Payment, Receipt, Service, ServiceOption
 from .services import recalculate_charge, record_payment
 
 
+class ServiceOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ServiceOption
+        fields = ["id", "name", "price", "is_active"]
+
+
 class ServiceSerializer(serializers.ModelSerializer):
+    options = ServiceOptionSerializer(many=True, read_only=True)
+
     class Meta:
         model = Service
-        fields = "__all__"
+        fields = ["id", "code", "name", "category", "price", "has_options", "is_active", "options"]
 
 
 class ChargeItemSerializer(serializers.ModelSerializer):

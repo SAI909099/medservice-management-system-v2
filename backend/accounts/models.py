@@ -5,16 +5,7 @@ from .page_permissions import PAGE_PERMISSIONS
 
 
 class Role(models.Model):
-    class Name(models.TextChoices):
-        SUPER_ADMIN = "super_admin", "Super Admin"
-        ADMIN = "admin", "Admin"
-        REGISTRATOR = "registrator", "Registrator"
-        CASHIER = "cashier", "Cashier"
-        DOCTOR = "doctor", "Doctor"
-        LAB_STAFF = "lab_staff", "Lab Staff"
-        TREATMENT_STAFF = "treatment_staff", "Treatment Room Staff"
-
-    name = models.CharField(max_length=40, choices=Name.choices, unique=True)
+    name = models.CharField(max_length=40, unique=True)
     description = models.CharField(max_length=255, blank=True)
 
     def __str__(self) -> str:

@@ -35,6 +35,17 @@ interface Paginated<T> {
   results: T[];
 }
 
+interface Doctor {
+  id: number;
+  user_full_name: string;
+}
+
+interface ReferringDoctor {
+  id: number;
+  full_name: string;
+  clinic_name: string;
+}
+
 const expenseCategories = [
   "Komunal to'lov",
   'Ijara',
@@ -42,6 +53,7 @@ const expenseCategories = [
   "Jihoz xaridi",
   'Dori-darmon',
   'Transport',
+  'Shifokor bonusi',
   'Boshqa',
 ] as const;
 
@@ -67,6 +79,9 @@ export function CashRegister() {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showOutputsModal, setShowOutputsModal] = useState(false);
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [referringDoctors, setReferringDoctors] = useState<ReferringDoctor[]>([]);
+  const [bulkMode, setBulkMode] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
     description: '',
     category: expenseCategories[0],
@@ -74,6 +89,7 @@ export function CashRegister() {
     note: '',
     amount: '',
     spent_at: new Date().toISOString().slice(0, 10),
+    doctor_id: '',
   });
 
   const loadRows = async () => {
@@ -124,8 +140,9 @@ export function CashRegister() {
     setPaymentSubmitting(false);
   };
 
-  const openExpenseModal = () => {
+  const openExpenseModal = async () => {
     setShowExpenseModal(true);
+    setBulkMode(false);
     setExpenseForm({
       description: '',
       category: expenseCategories[0],
@@ -133,12 +150,25 @@ export function CashRegister() {
       note: '',
       amount: '',
       spent_at: new Date().toISOString().slice(0, 10),
+      doctor_id: '',
     });
+    try {
+      const [doctorsRes, refDoctorsRes] = await Promise.all([
+        apiRequest<{ results: Doctor[] }>('/doctors/simple_list/'),
+        apiRequest<{ results: ReferringDoctor[] }>('/referring-doctors/').catch(() => ({ results: [] })),
+      ]);
+      setDoctors(doctorsRes?.results || []);
+      setReferringDoctors(refDoctorsRes?.results || []);
+    } catch {
+      setDoctors([]);
+      setReferringDoctors([]);
+    }
   };
 
   const closeExpenseModal = () => {
     setShowExpenseModal(false);
     setExpenseSubmitting(false);
+    setBulkMode(false);
   };
 
   const openOutputsModal = async () => {
@@ -203,18 +233,57 @@ export function CashRegister() {
     setExpenseSubmitting(true);
     setMessage('');
     try {
-      await apiRequest('/report-expenses/', {
-        method: 'POST',
-        body: JSON.stringify({
+      if (expenseForm.category === 'Shifokor bonusi' && bulkMode) {
+        const internalCount = doctors.length;
+        const externalCount = referringDoctors.length;
+        const totalCount = internalCount + externalCount;
+        if (totalCount === 0) {
+          setMessage("Shifokor topilmadi.");
+          setExpenseSubmitting(false);
+          return;
+        }
+        const doctorList = doctors.map(d => `i:${d.id}`).join(', ');
+        const refList = referringDoctors.map(r => `r:${r.id}`).join(', ');
+        const note = `Jami ${totalCount} ta shifokor (${internalCount} ichki, ${externalCount} tashqi). ${expenseForm.note.trim() ? '\n' + expenseForm.note.trim() : ''}\nShifokorlar: ${doctorList}${refList ? '; ' + refList : ''}`;
+        await apiRequest('/report-expenses/', {
+          method: 'POST',
+          body: JSON.stringify({
+            source: 'cash_register',
+            description: `Shifokorlar bonusi (${totalCount} kishi)`,
+            category: 'Shifokor bonusi',
+            note: note,
+            amount: expenseForm.amount,
+            spent_at: expenseForm.spent_at,
+          }),
+        });
+        setMessage(`${totalCount} ta shifokorga jami ${Number(expenseForm.amount).toLocaleString()} so'm bonus ajratildi.`);
+      } else {
+        const payload: Record<string, string> = {
           source: 'cash_register',
           description: expenseForm.description.trim() || 'Chiqim',
           category: expenseForm.category === 'Boshqa' ? expenseForm.customCategory.trim() : expenseForm.category,
           note: expenseForm.note.trim(),
           amount: expenseForm.amount,
           spent_at: expenseForm.spent_at,
-        }),
-      });
-      setMessage("Chiqim saqlandi.");
+        };
+        if (expenseForm.category === 'Shifokor bonusi' && expenseForm.doctor_id) {
+          const [type, id] = expenseForm.doctor_id.split(':');
+          if (type === 'i') {
+            const doc = doctors.find(d => String(d.id) === id);
+            payload.description = `Bonusi: ${doc?.user_full_name || 'Shifokor'}`;
+            payload.note = (expenseForm.note.trim() ? expenseForm.note.trim() + '\n' : '') + `doctor_id:i:${id}`;
+          } else {
+            const ref = referringDoctors.find(r => String(r.id) === id);
+            payload.description = `Bonusi: ${ref?.full_name || 'Shifokor'}`;
+            payload.note = (expenseForm.note.trim() ? expenseForm.note.trim() + '\n' : '') + `doctor_id:r:${id}`;
+          }
+        }
+        await apiRequest('/report-expenses/', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setMessage("Chiqim saqlandi.");
+      }
       await loadCashierOutputs();
       closeExpenseModal();
     } catch {
@@ -436,6 +505,48 @@ export function CashRegister() {
                   required
                 />
               ) : null}
+
+              {expenseForm.category === 'Shifokor bonusi' ? (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={bulkMode}
+                      onChange={(e) => setBulkMode(e.target.checked)}
+                    />
+                    Barcha shifokorlarga bir xil suma
+                  </label>
+                  
+                  {bulkMode ? (
+                    <div className="rounded bg-amber-50 p-2 text-xs">
+                      Ichki: {doctors.length} | Tashqi: {referringDoctors.length}
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full rounded border px-3 py-2 text-sm"
+                      value={expenseForm.doctor_id}
+                      onChange={(e) => setExpenseForm((p) => ({ ...p, doctor_id: e.target.value }))}
+                    >
+                      <option value="">Shifokorni tanlang</option>
+                      <optgroup label="Ichki shifokorlar">
+                        {doctors.map((doc) => (
+                          <option key={`i-${doc.id}`} value={`i:${doc.id}`}>
+                            {doc.user_full_name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Tashqi shifokorlar">
+                        {referringDoctors.map((ref) => (
+                          <option key={`r-${ref.id}`} value={`r:${ref.id}`}>
+                            {ref.full_name} {ref.clinic_name ? `(${ref.clinic_name})` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  )}
+                </div>
+              ) : null}
+
               <textarea
                 className="w-full rounded border px-3 py-2 text-sm"
                 placeholder="Qo'shimcha ma'lumot (ixtiyoriy)"

@@ -13,7 +13,7 @@ def resolve_doctor_for_user(user):
         return doctor
 
     role_name = getattr(getattr(user, "role", None), "name", None)
-    if role_name != Role.Name.DOCTOR:
+    if role_name != "doctor":
         return None
 
     doctor, _ = Doctor.objects.get_or_create(

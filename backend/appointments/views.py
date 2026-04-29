@@ -1,6 +1,7 @@
 from rest_framework import decorators, response, viewsets
 from django.utils.dateparse import parse_date
 from django.utils import timezone
+from rest_framework import permissions
 
 from accounts.models import Role, User
 from accounts.permissions import PageAccessPermission, RoleBasedPermission
@@ -8,8 +9,13 @@ from billing.models import Service
 from doctors.models import Doctor
 
 from .services import register_patient_appointment_with_charges
-from .models import Appointment, ServiceQueueTicket
-from .serializers import AppointmentRegisterSerializer, AppointmentSerializer, ServiceQueueTicketSerializer
+from .models import Appointment, ServiceQueueTicket, ReferringDoctor
+from .serializers import (
+    AppointmentRegisterSerializer,
+    AppointmentSerializer,
+    ReferringDoctorSerializer,
+    ServiceQueueTicketSerializer,
+)
 
 
 class AppointmentViewSet(viewsets.ModelViewSet):
@@ -29,8 +35,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=False, methods=["get"], url_path="staff-options")
     def staff_options(self, request):
         doctors = Doctor.objects.select_related("user").filter(is_active=True)
-        services = Service.objects.filter(is_active=True).order_by("name")
-        lab_staff = User.objects.select_related("role").filter(role__name=Role.Name.LAB_STAFF, is_active=True)
+        services = Service.objects.prefetch_related("options").filter(is_active=True).order_by("name")
+        lab_staff = User.objects.select_related("role").filter(role__name="lab_staff", is_active=True)
 
         doctors_data = [
             {
@@ -55,6 +61,11 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 "name": service.name,
                 "category": service.category,
                 "price": service.price,
+                "has_options": service.has_options,
+                "options": [
+                    {"id": opt.id, "name": opt.name, "price": str(opt.price), "is_active": opt.is_active}
+                    for opt in service.options.all()
+                ] if service.has_options else [],
             }
             for service in services
         ]
@@ -77,10 +88,28 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 complaint=payload.get("complaint", ""),
                 doctor=payload.get("doctor"),
                 services=payload.get("services", []),
+                service_options_map=payload.get("service_options_map", {}),
+                referring_doctor=payload.get("referring_doctor", ""),
             )
         except ValueError as exc:
             return response.Response({"detail": str(exc)}, status=400)
         return response.Response(result, status=201)
+
+    @decorators.action(detail=False, methods=["patch"], url_path="update-ticket-status")
+    def update_ticket_status(self, request):
+        ticket_id = request.data.get("ticket_id")
+        if not ticket_id:
+            return response.Response({"detail": "ticket_id talab qilinadi."}, status=400)
+        try:
+            ticket = ServiceQueueTicket.objects.get(id=ticket_id)
+        except ServiceQueueTicket.DoesNotExist:
+            return response.Response({"detail": "Ticket topilmadi."}, status=404)
+        new_status = request.data.get("status")
+        if new_status not in ["waiting", "completed", "cancelled"]:
+            return response.Response({"detail": "Noto'g'ri holat."}, status=400)
+        ticket.status = new_status
+        ticket.save(update_fields=["status"])
+        return response.Response({"id": ticket.id, "status": ticket.status})
 
     @decorators.action(detail=False, methods=["get"], url_path="service-queue")
     def service_queue(self, request):
@@ -105,3 +134,71 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if page is not None:
             return self.get_paginated_response(serializer.data)
         return response.Response({"results": serializer.data})
+
+    @decorators.action(detail=False, methods=["get"], url_path="mrt-queue")
+    def mrt_queue(self, request):
+        from billing.models import Charge, ChargeItem, ServiceOption
+
+        date_raw = request.query_params.get("date")
+        queue_date = parse_date(date_raw) if date_raw else None
+        if queue_date is None:
+            queue_date = timezone.localdate()
+
+        services_with_options = Service.objects.filter(has_options=True, is_active=True)
+        service_ids = list(services_with_options.values_list("id", flat=True))
+
+        if not service_ids:
+            return response.Response({"results": []})
+
+        queryset = ServiceQueueTicket.objects.select_related(
+            "patient", "service", "appointment"
+        ).filter(
+            queue_date=queue_date,
+            service_id__in=service_ids
+        ).order_by("service__name", "sequence_number", "created_at")
+
+        results = []
+        for ticket in queryset:
+            charge = Charge.objects.filter(
+                patient=ticket.patient,
+                appointment=ticket.appointment,
+            ).first()
+
+            items = list(charge.items.all()) if charge else []
+            body_parts = [item.description for item in items]
+
+            results.append({
+                "id": ticket.id,
+                "queue_code": ticket.queue_code,
+                "service_name": ticket.service.name,
+                "service_id": ticket.service_id,
+                "patient_id": ticket.patient.id,
+                "patient_name": f"{ticket.patient.first_name} {ticket.patient.last_name}".strip(),
+                "patient_phone": ticket.patient.phone,
+                "patient_dob": ticket.patient.date_of_birth.isoformat() if ticket.patient.date_of_birth else None,
+                "patient_gender": ticket.patient.gender,
+                "body_parts": body_parts,
+                "referring_doctor": ticket.referring_doctor or "",
+                "status": ticket.status,
+                "queue_date": ticket.queue_date.isoformat(),
+                "charge_id": charge.id if charge else None,
+                "charge_status": charge.status if charge else None,
+                "total_amount": str(charge.total_amount) if charge else "0",
+                "paid_amount": str(charge.paid_amount) if charge else "0",
+                "created_at": ticket.created_at.isoformat(),
+            })
+
+        return response.Response({"results": results})
+
+
+class ReferringDoctorViewSet(viewsets.ModelViewSet):
+    queryset = ReferringDoctor.objects.filter(is_active=True)
+    serializer_class = ReferringDoctorSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    search_fields = ["full_name", "clinic_name"]
+
+    def get_queryset(self):
+        try:
+            return super().get_queryset()
+        except Exception:
+            return ReferringDoctor.objects.none()

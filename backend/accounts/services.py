@@ -8,8 +8,11 @@ from .models import User, UserPagePermission
 def get_default_pages_for_role(role_name: str | None) -> set[str]:
     if not role_name:
         return set()
-    defaults = ROLE_DEFAULT_PAGES.get(role_name, set())
-    return set(defaults)
+    # Custom roles (not in ROLE_DEFAULT_PAGES) start with no default pages
+    # User must explicitly select pages
+    if role_name not in ROLE_DEFAULT_PAGES:
+        return set()
+    return set(ROLE_DEFAULT_PAGES.get(role_name, set()))
 
 
 def get_effective_pages_for_user(user: User) -> list[str]:
