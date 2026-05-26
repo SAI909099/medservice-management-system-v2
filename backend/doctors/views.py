@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import decorators, mixins, response, viewsets
@@ -6,10 +7,12 @@ from rest_framework.permissions import IsAuthenticated
 from accounts.permissions import PageAccessPermission, RoleBasedPermission
 from appointments.models import Appointment
 from appointments.serializers import AppointmentSerializer
+from reports.models import Expense
 
 from .models import Doctor, DoctorSchedule
 from .services import resolve_doctor_for_user
 from .serializers import DoctorPricingSerializer, DoctorScheduleSerializer, DoctorSerializer
+from .selectors import get_doctor_salary_summary
 
 
 class DoctorViewSet(viewsets.ModelViewSet):
@@ -26,6 +29,15 @@ class DoctorViewSet(viewsets.ModelViewSet):
         doctors = Doctor.objects.filter(is_active=True).select_related("user")
         data = [
             {"id": d.id, "user_full_name": d.user.get_full_name() or d.user.username}
+            for d in doctors
+        ]
+        return response.Response({"results": data})
+
+    @decorators.action(detail=False, methods=["get"], permission_classes=[IsAuthenticated], url_path="for-room-assignment")
+    def for_room_assignment(self, request):
+        doctors = Doctor.objects.filter(is_active=True).select_related("user")
+        data = [
+            {"id": d.id, "full_name": d.user.get_full_name() or d.user.username}
             for d in doctors
         ]
         return response.Response({"results": data})
@@ -75,6 +87,84 @@ class DoctorViewSet(viewsets.ModelViewSet):
         if page is not None:
             return self.get_paginated_response(serializer.data)
         return response.Response(serializer.data)
+
+    @decorators.action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
+    def salary_summary(self, request):
+        year = int(request.query_params.get("year", timezone.now().year))
+        month = int(request.query_params.get("month", timezone.now().month))
+        data = get_doctor_salary_summary(year, month)
+        return response.Response({
+            "year": year,
+            "month": month,
+            "doctors": data,
+        })
+
+    @decorators.action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated])
+    def salary_percentage(self, request, pk=None):
+        try:
+            doctor = Doctor.objects.get(pk=pk)
+        except Doctor.DoesNotExist:
+            return response.Response({"detail": "Doctor not found."}, status=404)
+        
+        percentage = request.data.get("percentage")
+        if percentage is None:
+            return response.Response({"detail": "percentage is required."}, status=400)
+        
+        try:
+            doctor.salary_percentage = Decimal(str(percentage))
+            doctor.save()
+        except Exception as e:
+            return response.Response({"detail": str(e)}, status=400)
+        
+        return response.Response({
+            "doctor_id": doctor.id,
+            "salary_percentage": float(doctor.salary_percentage),
+        })
+
+    @decorators.action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
+    def pay_salary(self, request):
+        doctor_id = request.data.get("doctor_id")
+        amount = request.data.get("amount")
+        note = request.data.get("note", "")
+        
+        if not doctor_id or not amount:
+            return response.Response({"detail": "doctor_id and amount are required."}, status=400)
+        
+        try:
+            doctor = Doctor.objects.get(pk=doctor_id)
+        except Doctor.DoesNotExist:
+            return response.Response({"detail": "Doctor not found."}, status=404)
+        
+        try:
+            amount_decimal = Decimal(str(amount))
+        except Exception:
+            return response.Response({"detail": "Invalid amount."}, status=400)
+        
+        clinic = doctor.clinic
+        branch = doctor.branch
+        if clinic is None:
+            from clinics.models import Clinic
+            clinic = Clinic.objects.first()
+        
+        expense = Expense.objects.create(
+            clinic=clinic,
+            branch=branch,
+            category="Shifokor maoshi",
+            description=f"{doctor.user.get_full_name() or doctor.user.username} - oylik maosh",
+            note=note,
+            amount=amount_decimal,
+            payment_method=Expense.PaymentMethod.CASH,
+            source=Expense.Source.ACCOUNTANT,
+            created_by=request.user,
+            spent_at=timezone.localdate(),
+        )
+        
+        return response.Response({
+            "expense_id": expense.id,
+            "doctor_name": f"{doctor.user.first_name} {doctor.user.last_name}".strip() or doctor.user.username,
+            "amount": float(expense.amount),
+            "created_at": expense.created_at.isoformat(),
+        })
 
 
 class DoctorScheduleViewSet(viewsets.ModelViewSet):

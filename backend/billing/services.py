@@ -320,6 +320,7 @@ def apply_patient_payment(
     return {
         "patient_id": patient_id,
         "patient_name": f"{patient.first_name} {patient.last_name}".strip() if patient else "",
+        "patient_birth_year": patient.date_of_birth.year if patient and patient.date_of_birth else None,
         "clinic_name": patient.clinic.name if patient and patient.clinic_id else "",
         "branch_name": patient.branch.name if patient and patient.branch_id else "",
         "processed_charges": processed,

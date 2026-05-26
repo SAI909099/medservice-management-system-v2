@@ -24,12 +24,14 @@ class TreatmentRoom(models.Model):
     branch = models.ForeignKey("clinics.Branch", on_delete=models.SET_NULL, null=True, blank=True, related_name="treatment_rooms")
     area = models.ForeignKey(TreatmentArea, on_delete=models.SET_NULL, null=True, blank=True, related_name="rooms")
     name = models.CharField(max_length=120)
+    room_number = models.PositiveIntegerField(default=0, help_text="Numeric value for sorting")
     capacity = models.PositiveIntegerField(default=1)
     daily_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
 
     class Meta:
         unique_together = ("clinic", "area", "name")
+        ordering = ["room_number", "name"]
 
     def __str__(self) -> str:
         return self.name

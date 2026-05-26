@@ -10,9 +10,10 @@ class Appointment(models.Model):
         CANCELLED = "cancelled", "Cancelled"
 
     patient = models.ForeignKey("patients.Patient", on_delete=models.CASCADE, related_name="appointments")
-    doctor = models.ForeignKey("doctors.Doctor", on_delete=models.CASCADE, related_name="appointments")
+    doctor = models.ForeignKey("doctors.Doctor", on_delete=models.CASCADE, related_name="appointments", null=True, blank=True)
     scheduled_at = models.DateTimeField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    queue_number = models.CharField(max_length=20, blank=True, verbose_name="Navbat raqami")
     complaint = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     referring_doctor = models.CharField(max_length=200, blank=True, verbose_name="Yuborgan shifokor")

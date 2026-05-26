@@ -13,6 +13,7 @@ type BillingStatus = 'unpaid' | 'partial' | 'paid' | 'prepaid';
 interface TreatmentRoomCharge {
   patient_id: number;
   patient_name: string;
+  doctor_name: string;
   status: BillingStatus;
   treatment_state: 'active' | 'left';
   total_amount: string;
@@ -258,6 +259,7 @@ export function TreatmentRoomBilling() {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Bemor</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Shifokor</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Charge soni</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Jami</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">To'langan</th>
@@ -272,6 +274,7 @@ export function TreatmentRoomBilling() {
             {items.map((row) => (
               <tr key={row.patient_id}>
                 <td className="px-4 py-3 text-sm text-gray-900">{row.patient_name}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">{row.doctor_name || '-'}</td>
                 <td className="px-4 py-3 text-sm text-gray-700">{row.charge_count}</td>
                 <td className="px-4 py-3 text-sm text-gray-700">{Number(row.total_amount).toLocaleString()} so'm</td>
                 <td className="px-4 py-3 text-sm text-gray-700">{Number(row.paid_amount).toLocaleString()} so'm</td>

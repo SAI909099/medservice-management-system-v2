@@ -39,7 +39,19 @@ class ServiceViewSet(viewsets.ModelViewSet):
         option = serializer.save(service=service)
         return response.Response(ServiceOptionSerializer(option).data, status=status.HTTP_201_CREATED)
 
-    @decorators.action(detail=True, methods=["delete"], url_path=r"options/(?P<option_id>[^/.]+)")
+    @decorators.action(detail=True, methods=["put", "patch"], url_path="edit-option/(?P<option_id>[^/.]+)")
+    def update_option(self, request, pk=None, option_id=None):
+        service = self.get_object()
+        try:
+            option = service.options.get(id=option_id)
+        except ServiceOption.DoesNotExist:
+            return response.Response({"detail": "Option topilmada"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ServiceOptionSerializer(option, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return response.Response(serializer.data)
+
+    @decorators.action(detail=True, methods=["delete"], url_path="delete-option/(?P<option_id>[^/.]+)")
     def delete_option(self, request, pk=None, option_id=None):
         service = self.get_object()
         try:

@@ -43,6 +43,7 @@ class TreatmentRoomSerializer(serializers.ModelSerializer):
             "area_name",
             "area_type",
             "name",
+            "room_number",
             "capacity",
             "daily_price",
             "is_active",

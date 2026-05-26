@@ -8,13 +8,14 @@ from accounts.permissions import PageAccessPermission, RoleBasedPermission
 from billing.models import Service
 from doctors.models import Doctor
 
-from .services import register_patient_appointment_with_charges
+from .services import register_patient_appointment_with_charges, create_appointment_for_existing_patient
 from .models import Appointment, ServiceQueueTicket, ReferringDoctor
 from .serializers import (
     AppointmentRegisterSerializer,
     AppointmentSerializer,
     ReferringDoctorSerializer,
     ServiceQueueTicketSerializer,
+    ExistingPatientAppointmentSerializer,
 )
 
 
@@ -81,14 +82,33 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 user=request.user,
                 first_name=payload["first_name"],
                 last_name=payload["last_name"],
-                gender=payload["gender"],
+                gender=payload.get("gender"),
                 birth_year=payload.get("birth_year"),
-                phone=payload["phone"],
-                address=payload.get("address", ""),
-                complaint=payload.get("complaint", ""),
+                phone=payload.get("phone"),
+                address=payload.get("address"),
+                complaint=payload.get("complaint"),
                 doctor=payload.get("doctor"),
                 services=payload.get("services", []),
                 service_options_map=payload.get("service_options_map", {}),
+                referring_doctor=payload.get("referring_doctor") or "",
+            )
+        except ValueError as exc:
+            return response.Response({"detail": str(exc)}, status=400)
+        return response.Response(result, status=201)
+
+    @decorators.action(detail=False, methods=["post"], url_path="create-for-patient")
+    def create_for_patient(self, request):
+        serializer = ExistingPatientAppointmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        try:
+            result = create_appointment_for_existing_patient(
+                user=request.user,
+                patient=payload["patient_obj"],
+                doctor=payload.get("doctor"),
+                services=payload.get("services", []),
+                service_options_map=payload.get("service_options_map", {}),
+                complaint=payload.get("complaint", ""),
                 referring_doctor=payload.get("referring_doctor", ""),
             )
         except ValueError as exc:
@@ -144,7 +164,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if queue_date is None:
             queue_date = timezone.localdate()
 
-        services_with_options = Service.objects.filter(has_options=True, is_active=True)
+        requested_service_id = request.query_params.get("service_id")
+        
+        if requested_service_id:
+            services_with_options = Service.objects.filter(id=requested_service_id, has_options=True, is_active=True)
+        else:
+            services_with_options = Service.objects.filter(has_options=True, is_active=True)
+            
         service_ids = list(services_with_options.values_list("id", flat=True))
 
         if not service_ids:
@@ -167,6 +193,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             items = list(charge.items.all()) if charge else []
             body_parts = [item.description for item in items]
 
+            referring = ticket.appointment.referring_doctor if ticket.appointment else ""
+            
             results.append({
                 "id": ticket.id,
                 "queue_code": ticket.queue_code,
@@ -178,7 +206,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 "patient_dob": ticket.patient.date_of_birth.isoformat() if ticket.patient.date_of_birth else None,
                 "patient_gender": ticket.patient.gender,
                 "body_parts": body_parts,
-                "referring_doctor": ticket.referring_doctor or "",
+                "referring_doctor": referring or "",
                 "status": ticket.status,
                 "queue_date": ticket.queue_date.isoformat(),
                 "charge_id": charge.id if charge else None,

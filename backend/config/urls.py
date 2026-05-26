@@ -9,7 +9,7 @@ from clinics.views import BranchViewSet, ClinicViewSet
 from doctors.views import DoctorPricingViewSet, DoctorScheduleViewSet, DoctorViewSet
 from laboratory.views import LabReferralViewSet, LabServiceViewSet
 from patients.views import PatientViewSet
-from reports.views import ExpenseViewSet, IncomeAnalyticsView, ReportsView
+from reports.views import ExpenseViewSet, IncomeAnalyticsView, ReportsView, ServiceIncomeView
 from treatment_rooms.views import TreatmentAreaViewSet, TreatmentReferralViewSet, TreatmentRoomViewSet
 
 router = DefaultRouter()
@@ -38,6 +38,7 @@ urlpatterns = [
     path("api/auth/", include("accounts.urls")),
     path("api/reports/", ReportsView.as_view(), name="reports"),
     path("api/reports/income-analytics/", IncomeAnalyticsView.as_view(), name="income-analytics"),
+    path("api/reports/service-income/", ServiceIncomeView.as_view(), name="service-income"),
     path("api/receipts/<int:payment_id>/", ReceiptView.as_view(), name="receipt"),
     path("api/", include(router.urls)),
 ]

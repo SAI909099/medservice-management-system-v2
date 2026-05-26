@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db.models import Count, Exists, Max, OuterRef, Sum
+from django.db.models import Count, Exists, Max, OuterRef, Subquery, Sum
 
 from .models import Charge
 from treatment_rooms.models import TreatmentReferral
@@ -144,6 +144,11 @@ def get_treatment_room_patient_rows(
         status=TreatmentReferral.Status.IN_PROGRESS,
     )
 
+    doctor_subquery = TreatmentReferral.objects.filter(
+        patient_id=OuterRef("patient_id"),
+        doctor__isnull=False,
+    ).order_by("-created_at").values("doctor__user__first_name", "doctor__user__last_name")[:1]
+
     rows = (
         queryset.values("patient_id", "patient__first_name", "patient__last_name")
         .annotate(
@@ -152,6 +157,8 @@ def get_treatment_room_patient_rows(
             charge_count=Count("id"),
             last_charge_at=Max("created_at"),
             has_active_referral=Exists(active_referrals),
+            doctor_first_name=Subquery(doctor_subquery.values("doctor__user__first_name")),
+            doctor_last_name=Subquery(doctor_subquery.values("doctor__user__last_name")),
         )
         .order_by("-last_charge_at")
     )
@@ -177,10 +184,15 @@ def get_treatment_room_patient_rows(
             continue
         if treatment_state and treatment_state != "all" and row_treatment_state != treatment_state:
             continue
+        doctor_name = ""
+        if row.get("doctor_first_name") or row.get("doctor_last_name"):
+            doctor_name = f"{row.get('doctor_first_name', '')} {row.get('doctor_last_name', '')}".strip()
+
         result.append(
             {
                 "patient_id": row["patient_id"],
                 "patient_name": f"{row['patient__first_name']} {row['patient__last_name']}".strip(),
+                "doctor_name": doctor_name,
                 "status": row_status,
                 "treatment_state": row_treatment_state,
                 "total_amount": total_amount,

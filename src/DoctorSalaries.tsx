@@ -1,0 +1,300 @@
+import React, { useEffect, useState } from 'react';
+import { apiRequest } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+
+interface DoctorSalary {
+  doctor_id: number;
+  doctor_name: string;
+  specialty: string;
+  salary_percentage: number;
+  treatment_income: number;
+  calculated_salary: number;
+}
+
+interface SalaryResponse {
+  year: number;
+  month: number;
+  doctors: DoctorSalary[];
+}
+
+const months = [
+  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+  'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'
+];
+
+export function DoctorSalaries() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [salaryData, setSalaryData] = useState<DoctorSalary[]>([]);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [message, setMessage] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [payingDoctor, setPayingDoctor] = useState<DoctorSalary | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payNote, setPayNote] = useState('');
+  const [payingLoading, setPayingLoading] = useState(false);
+
+  const loadSalaryData = () => {
+    setLoading(true);
+    apiRequest<SalaryResponse>(`/doctors/salary-summary/?year=${year}&month=${month}`)
+      .then((res) => {
+        setSalaryData(res.doctors || []);
+      })
+      .catch(() => {
+        setSalaryData([]);
+        setMessage("Ma'lumotlarni yuklashda xatolik.");
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadSalaryData();
+  }, [year, month]);
+
+  const updatePercentage = async (doctorId: number) => {
+    const value = parseFloat(editValue);
+    if (isNaN(value) || value < 0 || value > 100) {
+      setMessage("Foiz 0-100 oralig'ida bo'lishi kerak.");
+      return;
+    }
+    try {
+      await apiRequest(`/doctors/${doctorId}/salary_percentage/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ percentage: value }),
+      });
+      setMessage("Foiz muvaffaqiyatli yangilandi.");
+      setEditingId(null);
+      loadSalaryData();
+    } catch {
+      setMessage("Xatolik yuz berdi.");
+    }
+  };
+
+  const handlePaySalary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payingDoctor) return;
+    
+    const amount = parseFloat(payAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setMessage("To'g'ri summa kiriting.");
+      return;
+    }
+
+    setPayingLoading(true);
+    setMessage('');
+    try {
+      await apiRequest('/doctors/pay_salary/', {
+        method: 'POST',
+        body: JSON.stringify({
+          doctor_id: payingDoctor.doctor_id,
+          amount: payAmount,
+          note: payNote,
+        }),
+      });
+      setMessage(`Maosh to'landi: ${Number(payAmount).toLocaleString()} so'm`);
+      setPayingDoctor(null);
+      setPayAmount('');
+      setPayNote('');
+    } catch (err) {
+      if (err && typeof err === 'object' && typeof (err as Record<string, unknown>).detail === 'string') {
+        setMessage((err as Record<string, string>).detail);
+      } else {
+        setMessage("Xatolik yuz berdi.");
+      }
+    } finally {
+      setPayingLoading(false);
+    }
+  };
+
+  const totalIncome = salaryData.reduce((sum, d) => sum + d.treatment_income, 0);
+  const totalSalary = salaryData.reduce((sum, d) => sum + d.calculated_salary, 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Shifokorlar maoshlari</h2>
+          <p className="text-sm text-gray-500">Davolash xonasi to'lovlaridan shifokor ulushi.</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-gray-700">Oy:</label>
+          <select
+            value={month}
+            onChange={(e) => setMonth(parseInt(e.target.value))}
+            className="rounded border border-gray-300 px-3 py-2 text-sm"
+          >
+            {months.map((m, i) => (
+              <option key={i} value={i + 1}>{m}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-gray-700">Yil:</label>
+          <input
+            type="number"
+            value={year}
+            onChange={(e) => setYear(parseInt(e.target.value))}
+            className="w-24 rounded border border-gray-300 px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      {message && (
+        <div className={`rounded p-3 text-sm ${message.includes('muvaffaqiyat') || message.includes('to\'landi') ? 'bg-teal-100 text-teal-700' : 'bg-red-100 text-red-700'}`}>
+          {message}
+        </div>
+      )}
+
+      <div className="flex gap-4 text-sm">
+        <div className="rounded bg-blue-50 px-4 py-2">
+          <span className="text-gray-600">Jami tushum:</span>
+          <span className="ml-2 font-semibold text-blue-700">{totalIncome.toLocaleString()} so'm</span>
+        </div>
+        <div className="rounded bg-green-50 px-4 py-2">
+          <span className="text-gray-600">Jami maosh:</span>
+          <span className="ml-2 font-semibold text-green-700">{totalSalary.toLocaleString()} so'm</span>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Shifokor</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Mutaxassislik</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Foiz (%)</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Davolash tushumi</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Maosh hisoblangan</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Amal</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 bg-white">
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                  Yuklanmoqda...
+                </td>
+              </tr>
+            ) : salaryData.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                  Ma'lumot topilmadi
+                </td>
+              </tr>
+            ) : (
+              salaryData.map((doc) => (
+                <tr key={doc.doctor_id}>
+                  <td className="px-4 py-3 text-sm text-gray-900">{doc.doctor_name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{doc.specialty}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {editingId === doc.doctor_id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          className="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
+                          min="0"
+                          max="100"
+                        />
+                        <button
+                          onClick={() => updatePercentage(doc.doctor_id)}
+                          className="rounded bg-teal-600 px-2 py-1 text-xs text-white"
+                        >
+                          Saqlash
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="rounded bg-gray-400 px-2 py-1 text-xs text-white"
+                        >
+                          Bekor
+                        </button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => { setEditingId(doc.doctor_id); setEditValue(String(doc.salary_percentage)); }}
+                        className="cursor-pointer rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200"
+                      >
+                        {doc.salary_percentage}%
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{doc.treatment_income.toLocaleString()} so'm</td>
+                  <td className="px-4 py-3 text-sm font-medium text-green-700">
+                    {doc.calculated_salary.toLocaleString()} so'm
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => { setPayingDoctor(doc); setPayAmount(String(doc.calculated_salary)); setPayNote(''); }}
+                      disabled={doc.calculated_salary <= 0}
+                      className="rounded bg-teal-700 px-3 py-1 text-xs font-medium text-white hover:bg-teal-600 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    >
+                      To'lash
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {payingDoctor ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-lg font-semibold text-gray-900">Maosh to'lash</h4>
+              <button
+                type="button"
+                onClick={() => setPayingDoctor(null)}
+                className="rounded border px-2 py-1 text-sm"
+              >
+                Yopish
+              </button>
+            </div>
+            <p className="mb-2 text-sm text-gray-700">{payingDoctor.doctor_name}</p>
+            <p className="mb-3 text-xs text-gray-500">
+              Hisoblangan maosh: {payingDoctor.calculated_salary.toLocaleString()} so'm
+            </p>
+            <form onSubmit={handlePaySalary} className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-700">Summa</label>
+                <input
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700">Izoh (ixtiyoriy)</label>
+                <textarea
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  value={payNote}
+                  onChange={(e) => setPayNote(e.target.value)}
+                  placeholder="Izoh"
+                  rows={2}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={payingLoading}
+                className="w-full rounded bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-60"
+              >
+                {payingLoading ? 'Saqlanmoqda...' : "To'lash"}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

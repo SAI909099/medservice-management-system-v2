@@ -18,8 +18,10 @@ import { TreatmentRoomBilling } from './pages/TreatmentRoomBilling';
 import { CashRegister } from './pages/CashRegister';
 import { Accountant } from './pages/Accountant';
 import { IncomeAnalytics } from './pages/IncomeAnalytics';
+import { ServiceIncome } from './pages/ServiceIncome';
 import { ServiceQueue } from './pages/ServiceQueue';
 import { MRTQueue } from './pages/MRTQueue';
+import { DoctorSalaries } from './pages/DoctorSalaries';
 
 // Mock empty pages for links in sidebar
 function ComingSoon({ title }: { title: string }) {
@@ -110,11 +112,13 @@ function App() {
           <Route path="treatment" element={<ProtectedPage pageCode="treatment" element={<TreatmentRooms />} />} />
           <Route path="rooms" element={<ProtectedPage pageCode="treatment" element={<RoomsList />} />} />
           <Route path="treatment-billing" element={<ProtectedPage pageCode="treatment" element={<TreatmentRoomBilling />} />} />
+          <Route path="doctor-salaries" element={<ProtectedPage pageCode="reports" element={<DoctorSalaries />} />} />
           <Route path="cash-register" element={<ProtectedPage pageCode="billing" element={<CashRegister />} />} />
           <Route path="billing" element={<ProtectedPage pageCode="billing" element={<Billing />} />} />
           <Route path="pricing" element={<ProtectedPage pageCode="pricing" element={<Pricing />} />} />
           <Route path="accountant" element={<ProtectedPage pageCode="reports" element={<Accountant />} />} />
           <Route path="income" element={<ProtectedPage pageCode="reports" element={<IncomeAnalytics />} />} />
+          <Route path="service-income" element={<ProtectedPage pageCode="reports" element={<ServiceIncome />} />} />
           <Route path="reports" element={<ProtectedPage pageCode="reports" element={<Reports />} />} />
           <Route path="settings/users" element={<ProtectedPage pageCode="settings_users" element={<UsersSettings />} />} />
           <Route path="settings" element={<ComingSoon title="Sozlamalar" />} />
