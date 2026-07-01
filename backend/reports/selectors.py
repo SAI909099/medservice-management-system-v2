@@ -54,26 +54,47 @@ def scoped_charges_queryset(user):
 
 
 def get_base_reports_payload(user):
-    daily = (
-        scoped_payments_queryset(user)
+    payment_qs = scoped_payments_queryset(user)
+    expense_qs = scoped_expenses_queryset(user)
+
+    daily = list(
+        payment_qs
         .annotate(day=TruncDay("created_at"))
         .values("day")
         .annotate(total=Sum("amount"))
         .order_by("-day")[:30]
     )
-    monthly = (
-        scoped_payments_queryset(user)
+    daily_refunds = {
+        (item["day"].date() if hasattr(item["day"], "date") else item["day"]).isoformat(): item["total"]
+        for item in expense_qs.filter(category="Qaytarish (Refund)").annotate(day=TruncDay("spent_at")).values("day").annotate(total=Sum("amount"))
+    }
+    for row in daily:
+        day_key = (row["day"].date() if hasattr(row["day"], "date") else row["day"]).isoformat()
+        refund = daily_refunds.get(day_key, Decimal("0.00"))
+        row["total"] = row["total"] - refund
+
+    monthly = list(
+        payment_qs
         .annotate(month=TruncMonth("created_at"))
         .values("month")
         .annotate(total=Sum("amount"))
         .order_by("-month")[:12]
     )
+    monthly_refunds = {
+        (item["month"].date() if hasattr(item["month"], "date") else item["month"]).isoformat()[:7]: item["total"]
+        for item in expense_qs.filter(category="Qaytarish (Refund)").annotate(month=TruncMonth("spent_at")).values("month").annotate(total=Sum("amount"))
+    }
+    for row in monthly:
+        month_key = (row["month"].date() if hasattr(row["month"], "date") else row["month"]).isoformat()[:7]
+        refund = monthly_refunds.get(month_key, Decimal("0.00"))
+        row["total"] = row["total"] - refund
+
     debtors = scoped_charges_queryset(user).filter(status__in=[Charge.Status.UNPAID, Charge.Status.PARTIAL]).values(
         "id", "patient__first_name", "patient__last_name", "total_amount", "paid_amount", "status"
     )
     return {
-        "daily_revenue": list(daily),
-        "monthly_revenue": list(monthly),
+        "daily_revenue": daily,
+        "monthly_revenue": monthly,
         "debtors": list(debtors),
     }
 
@@ -102,11 +123,17 @@ def get_finance_overview(
 
     income_total = payment_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
     output_total = expense_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
-    net_total = income_total - output_total
+    refund_total = expense_qs.filter(category="Qaytarish (Refund)").aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+    effective_income = income_total - refund_total
+    net_total = effective_income - output_total
 
     income_by_day = {
         (item["day"].date() if hasattr(item["day"], "date") else item["day"]).isoformat(): item["total"]
         for item in payment_qs.annotate(day=TruncDay("created_at")).values("day").annotate(total=Sum("amount"))
+    }
+    refund_by_day = {
+        (item["day"].isoformat() if hasattr(item["day"], "isoformat") else item["day"]): item["total"]
+        for item in expense_qs.filter(category="Qaytarish (Refund)").annotate(day=TruncDay("spent_at")).values("day").annotate(total=Sum("amount"))
     }
     output_by_day = {
         (item["day"].date() if hasattr(item["day"], "date") else item["day"]).isoformat(): item["total"]
@@ -118,13 +145,15 @@ def get_finance_overview(
     while current <= end_date:
         key = current.isoformat()
         income = income_by_day.get(key, Decimal("0.00"))
+        refund = refund_by_day.get(key, Decimal("0.00"))
+        effective = income - refund
         output = output_by_day.get(key, Decimal("0.00"))
         timeline.append(
             {
                 "date": key,
-                "income": income,
+                "income": effective,
                 "output": output,
-                "net": income - output,
+                "net": effective - output,
             }
         )
         current += timedelta(days=1)
@@ -232,8 +261,9 @@ def get_finance_overview(
         "date_from": start_date,
         "date_to": end_date,
         "days": resolved_days,
-        "income_total": income_total,
+        "income_total": effective_income,
         "output_total": output_total,
+        "refund_total": refund_total,
         "net_total": net_total,
         "timeline": timeline,
         "payment_methods": method_breakdown,
@@ -322,6 +352,7 @@ def get_income_analytics(user, period: str = "month", date_from: str | None = No
     resolved_group_by = "month" if (group_by or "").lower() == "month" else "day"
 
     payment_qs = scoped_payments_queryset(user).filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
+    expense_qs = scoped_expenses_queryset(user).filter(spent_at__gte=start_date, spent_at__lte=end_date, category="Qaytarish (Refund)")
 
     doctor_qs = payment_qs.filter(charge__appointment_id__isnull=False)
     treatment_qs = payment_qs.filter(charge__treatment_referral_id__isnull=False)
@@ -331,6 +362,20 @@ def get_income_analytics(user, period: str = "month", date_from: str | None = No
     doctor_total = doctor_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
     treatment_total = treatment_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
     service_total = service_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+
+    refund_total = expense_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+    refund_by_source = {
+        item["source"]: item["total"]
+        for item in expense_qs.values("source").annotate(total=Sum("amount"))
+    }
+    doctor_refund = Decimal("0.00")
+    treatment_refund = Decimal("0.00")
+    service_refund = refund_total
+
+    effective_income = income_total - refund_total
+    doctor_total = doctor_total - doctor_refund
+    treatment_total = treatment_total - treatment_refund
+    service_total = service_total - service_refund
     other_total = Decimal("0.00")
 
     timeline = list(
@@ -339,6 +384,17 @@ def get_income_analytics(user, period: str = "month", date_from: str | None = No
         .annotate(total=Sum("amount"))
         .order_by("period_value")
     )
+    refund_timeline = {
+        (item["period_value"].date() if hasattr(item["period_value"], "date") else item["period_value"]).isoformat()[:7] if resolved_group_by == "month"
+        else (item["period_value"].date() if hasattr(item["period_value"], "date") else item["period_value"]).isoformat(): item["total"]
+        for item in expense_qs.annotate(period_value=truncate_fn("spent_at")).values("period_value").annotate(total=Sum("amount"))
+    }
+    for row in timeline:
+        key = (row["period_value"].date() if hasattr(row["period_value"], "date") else row["period_value"]).isoformat()
+        if resolved_group_by == "month":
+            key = key[:7]
+        refund = refund_timeline.get(key, Decimal("0.00"))
+        row["total"] = row["total"] - refund
 
     doctor_breakdown = list(
         doctor_qs.values(
@@ -365,7 +421,8 @@ def get_income_analytics(user, period: str = "month", date_from: str | None = No
         "group_by": resolved_group_by,
         "date_from": start_date,
         "date_to": end_date,
-        "income_total": income_total,
+        "income_total": effective_income,
+        "refund_total": refund_total,
         "sources": {
             "doctor": doctor_total,
             "treatment_room": treatment_total,

@@ -73,6 +73,9 @@ class ChargeItem(models.Model):
     unit_price = models.DecimalField(max_digits=12, decimal_places=2)
     total_price = models.DecimalField(max_digits=12, decimal_places=2)
     note = models.CharField(max_length=255, blank=True)
+    is_cancelled = models.BooleanField(default=False)
+    cancel_note = models.TextField(blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return f"{self.description} x {self.quantity}"

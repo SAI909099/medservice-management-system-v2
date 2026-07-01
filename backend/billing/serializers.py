@@ -31,6 +31,7 @@ class ChargeItemSerializer(serializers.ModelSerializer):
             "unit_price",
             "total_price",
             "note",
+            "is_cancelled",
         ]
         extra_kwargs = {
             "total_price": {"required": False},
@@ -45,12 +46,14 @@ class ChargeItemSerializer(serializers.ModelSerializer):
 
 class ChargeSerializer(serializers.ModelSerializer):
     items = ChargeItemSerializer(many=True)
+    patient_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Charge
         fields = [
             "id",
             "patient",
+            "patient_name",
             "appointment",
             "treatment_referral",
             "status",
@@ -65,6 +68,11 @@ class ChargeSerializer(serializers.ModelSerializer):
             "appointment": {"required": False, "allow_null": True},
             "treatment_referral": {"required": False, "allow_null": True},
         }
+
+    def get_patient_name(self, obj):
+        if obj.patient:
+            return f"{obj.patient.first_name} {obj.patient.last_name}".strip()
+        return ""
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])

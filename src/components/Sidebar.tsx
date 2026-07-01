@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, Calendar, UserPlus, FileText, Settings, HeartPulse, CreditCard, Droplet, BedDouble } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, UserPlus, FileText, Settings, HeartPulse, CreditCard, Droplet, BedDouble, Wallet, XCircle } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useAuth } from '@/context/AuthContext';
 
@@ -21,6 +21,10 @@ const navigation = [
   { name: 'Buxgalteriya', to: '/accountant', icon: FileText, pageCode: 'accountant' },
   { name: 'Daromad analitika', to: '/income', icon: FileText, pageCode: 'income' },
   { name: 'Hisobotlar', to: '/reports', icon: FileText, pageCode: 'reports' },
+  { name: 'Xizmatlar tushumi', to: '/service-income', icon: FileText, pageCode: 'reports' },
+  { name: 'Shifokorlar maoshlari', to: '/doctor-salaries', icon: Wallet, pageCode: 'doctor_salaries' },
+  { name: 'Shifokorlar qabul maoshlari', to: '/doctor-appointment-salaries', icon: Wallet, pageCode: 'doctor_appointment_salaries' },
+  { name: 'Bekor qilish', to: '/cancels', icon: XCircle, pageCode: 'cancels' },
   { name: 'Foydalanuvchilar', to: '/settings/users', icon: Settings, pageCode: 'settings_users' },
 ];
 

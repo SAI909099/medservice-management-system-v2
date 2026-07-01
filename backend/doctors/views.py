@@ -12,7 +12,7 @@ from reports.models import Expense
 from .models import Doctor, DoctorSchedule
 from .services import resolve_doctor_for_user
 from .serializers import DoctorPricingSerializer, DoctorScheduleSerializer, DoctorSerializer
-from .selectors import get_doctor_salary_summary
+from .selectors import get_doctor_salary_summary, get_doctor_appointment_salary_summary
 
 
 class DoctorViewSet(viewsets.ModelViewSet):
@@ -121,6 +121,28 @@ class DoctorViewSet(viewsets.ModelViewSet):
             "salary_percentage": float(doctor.salary_percentage),
         })
 
+    @decorators.action(detail=True, methods=["patch"], permission_classes=[IsAuthenticated], url_path="appointment-salary-percentage")
+    def appointment_salary_percentage(self, request, pk=None):
+        try:
+            doctor = Doctor.objects.get(pk=pk)
+        except Doctor.DoesNotExist:
+            return response.Response({"detail": "Doctor not found."}, status=404)
+        
+        percentage = request.data.get("percentage")
+        if percentage is None:
+            return response.Response({"detail": "percentage is required."}, status=400)
+        
+        try:
+            doctor.appointment_salary_percentage = Decimal(str(percentage))
+            doctor.save()
+        except Exception as e:
+            return response.Response({"detail": str(e)}, status=400)
+        
+        return response.Response({
+            "doctor_id": doctor.id,
+            "appointment_salary_percentage": float(doctor.appointment_salary_percentage),
+        })
+
     @decorators.action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
     def pay_salary(self, request):
         doctor_id = request.data.get("doctor_id")
@@ -149,8 +171,69 @@ class DoctorViewSet(viewsets.ModelViewSet):
         expense = Expense.objects.create(
             clinic=clinic,
             branch=branch,
+            doctor=doctor,
             category="Shifokor maoshi",
             description=f"{doctor.user.get_full_name() or doctor.user.username} - oylik maosh",
+            note=note,
+            amount=amount_decimal,
+            payment_method=Expense.PaymentMethod.CASH,
+            source=Expense.Source.ACCOUNTANT,
+            created_by=request.user,
+            spent_at=timezone.localdate(),
+        )
+        
+        return response.Response({
+            "expense_id": expense.id,
+            "doctor_name": f"{doctor.user.first_name} {doctor.user.last_name}".strip() or doctor.user.username,
+            "amount": float(expense.amount),
+            "created_at": expense.created_at.isoformat(),
+        })
+
+    @decorators.action(detail=False, methods=["get"], permission_classes=[IsAuthenticated], url_path="appointment-salary-summary")
+    def appointment_salary_summary(self, request):
+        year = int(request.query_params.get("year", timezone.now().year))
+        month = int(request.query_params.get("month", timezone.now().month))
+        day = request.query_params.get("day")
+        day_int = int(day) if day else None
+        data = get_doctor_appointment_salary_summary(year, month, day=day_int)
+        return response.Response({
+            "year": year,
+            "month": month,
+            "day": day_int,
+            "doctors": data,
+        })
+
+    @decorators.action(detail=False, methods=["post"], permission_classes=[IsAuthenticated], url_path="pay-appointment-salary")
+    def pay_appointment_salary(self, request):
+        doctor_id = request.data.get("doctor_id")
+        amount = request.data.get("amount")
+        note = request.data.get("note", "")
+        
+        if not doctor_id or not amount:
+            return response.Response({"detail": "doctor_id and amount are required."}, status=400)
+        
+        try:
+            doctor = Doctor.objects.get(pk=doctor_id)
+        except Doctor.DoesNotExist:
+            return response.Response({"detail": "Doctor not found."}, status=404)
+        
+        try:
+            amount_decimal = Decimal(str(amount))
+        except Exception:
+            return response.Response({"detail": "Invalid amount."}, status=400)
+        
+        clinic = doctor.clinic
+        branch = doctor.branch
+        if clinic is None:
+            from clinics.models import Clinic
+            clinic = Clinic.objects.first()
+        
+        expense = Expense.objects.create(
+            clinic=clinic,
+            branch=branch,
+            doctor=doctor,
+            category="Shifokor maoshi (qabul)",
+            description=f"{doctor.user.get_full_name() or doctor.user.username} - qabul maoshi",
             note=note,
             amount=amount_decimal,
             payment_method=Expense.PaymentMethod.CASH,

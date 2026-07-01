@@ -14,6 +14,7 @@ class Expense(models.Model):
 
     clinic = models.ForeignKey("clinics.Clinic", on_delete=models.CASCADE, related_name="expenses")
     branch = models.ForeignKey("clinics.Branch", on_delete=models.SET_NULL, null=True, blank=True, related_name="expenses")
+    doctor = models.ForeignKey("doctors.Doctor", on_delete=models.SET_NULL, null=True, blank=True, related_name="expenses")
     source = models.CharField(max_length=20, choices=Source.choices, default=Source.ACCOUNTANT)
     category = models.CharField(max_length=100, blank=True)
     description = models.CharField(max_length=255)

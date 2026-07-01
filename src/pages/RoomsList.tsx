@@ -4,6 +4,7 @@ import { apiRequest } from '@/lib/api';
 interface TreatmentRoom {
   id: number;
   name: string;
+  room_number: number;
   area_name?: string;
   area_type?: 'floor' | 'apartment';
   capacity: number;
@@ -53,12 +54,16 @@ export function RoomsList() {
   const [selectedDischargeReferralId, setSelectedDischargeReferralId] = useState('');
   const [dischargeNote, setDischargeNote] = useState('');
   const [dischargeSubmitting, setDischargeSubmitting] = useState(false);
+  const [moveRoom, setMoveRoom] = useState<NormalizedRoom | null>(null);
+  const [selectedMoveReferralId, setSelectedMoveReferralId] = useState('');
+  const [moveTargetRoomId, setMoveTargetRoomId] = useState('');
+  const [moveSubmitting, setMoveSubmitting] = useState(false);
 
   const loadRooms = () => {
     setLoading(true);
     setError('');
-    return apiRequest<Paginated<TreatmentRoom>>('/treatment-rooms/')
-      .then((res) => setRooms(res.results || []))
+    return apiRequest<TreatmentRoom[] | Paginated<TreatmentRoom>>('/treatment-rooms/')
+      .then((res) => setRooms(Array.isArray(res) ? res : res.results || []))
       .catch(() => {
         setRooms([]);
         setError("Xonalar ro'yxatini yuklab bo'lmadi.");
@@ -194,6 +199,50 @@ export function RoomsList() {
     setSelectedDischargeReferralId('');
     setDischargeNote('');
     setDischargeSubmitting(false);
+  };
+
+  const openMoveModal = (room: NormalizedRoom) => {
+    if (!room.current_patients || room.current_patients.length === 0) {
+      setAssignStatus('error');
+      setAssignMessage("Ko'chiriladigan bemor topilmadi.");
+      return;
+    }
+    setMoveRoom(room);
+    setSelectedMoveReferralId(String(room.current_patients[0].referral_id));
+    setMoveTargetRoomId('');
+    setMoveSubmitting(false);
+  };
+
+  const closeMoveModal = () => {
+    setMoveRoom(null);
+    setSelectedMoveReferralId('');
+    setMoveTargetRoomId('');
+    setMoveSubmitting(false);
+  };
+
+  const submitMove = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!moveRoom || !selectedMoveReferralId || !moveTargetRoomId) return;
+    setMoveSubmitting(true);
+    setAssignMessage('');
+    setAssignStatus('');
+    try {
+      await apiRequest(`/treatment-referrals/${selectedMoveReferralId}/move/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          room: Number(moveTargetRoomId),
+        }),
+      });
+      setAssignStatus('success');
+      setAssignMessage("Bemor muvaffaqiyatli ko'chirildi.");
+      await loadRooms();
+      closeMoveModal();
+    } catch {
+      setAssignStatus('error');
+      setAssignMessage("Ko'chirishda xatolik yuz berdi.");
+    } finally {
+      setMoveSubmitting(false);
+    }
   };
 
   const submitAssign = async (e: React.FormEvent) => {
@@ -368,6 +417,14 @@ export function RoomsList() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => openMoveModal(room)}
+                      disabled={occupied <= 0}
+                      className="mt-1 w-full rounded bg-amber-500 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-amber-200"
+                    >
+                      Ko'chirish
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => openDischargeModal(room)}
                       disabled={occupied <= 0}
                       className="mt-1 w-full rounded bg-rose-500 px-2 py-1 text-xs font-medium text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-200"
@@ -524,6 +581,65 @@ export function RoomsList() {
                 className="w-full rounded bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
               >
                 {dischargeSubmitting ? 'Saqlanmoqda...' : 'Chiqarvorish'}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {moveRoom ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-xl rounded-lg border border-gray-200 bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-lg font-semibold text-gray-900">{moveRoom.name} - bemorni ko'chirish</h4>
+              <button type="button" onClick={closeMoveModal} className="rounded border px-2 py-1 text-sm">
+                Yopish
+              </button>
+            </div>
+            <form onSubmit={submitMove} className="space-y-3">
+              <div className="rounded border bg-slate-50 p-3 text-sm">
+                <p className="font-semibold text-gray-900">Joriy xona: {moveRoom.name}</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Bemorni tanlang</label>
+                <select
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  value={selectedMoveReferralId}
+                  onChange={(e) => setSelectedMoveReferralId(e.target.value)}
+                  required
+                >
+                  <option value="">Bemorni tanlang</option>
+                  {(moveRoom.current_patients || []).map((p) => (
+                    <option key={p.referral_id} value={p.referral_id}>
+                      {p.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Yangi xona</label>
+                <select
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  value={moveTargetRoomId}
+                  onChange={(e) => setMoveTargetRoomId(e.target.value)}
+                  required
+                >
+                  <option value="">Xonani tanlang</option>
+                  {normalizedRooms
+                    .filter((r) => r.id !== moveRoom.id && r.occupancyStatus !== 'full')
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.occupied}/{r.capacity})
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={moveSubmitting || !selectedMoveReferralId || !moveTargetRoomId}
+                className="w-full rounded bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60"
+              >
+                {moveSubmitting ? 'Ko\'chirilmoqda...' : "Ko'chirish"}
               </button>
             </form>
           </div>

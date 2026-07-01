@@ -14,39 +14,59 @@ from patients.models import Patient
 from .models import Appointment, ServiceQueueTicket
 
 
+def _get_doctor_initials(doctor: Doctor) -> str:
+    """Get initials from doctor's last name and first name. E.g. 'Umarov Sodig' -> 'US'"""
+    user = doctor.user
+    last_name = (user.last_name or "").strip()
+    first_name = (user.first_name or "").strip()
+    last_initial = last_name[0].upper() if last_name else "X"
+    first_initial = first_name[0].upper() if first_name else "X"
+    return f"{last_initial}{first_initial}"
+
+
 def generate_doctor_queue_number(doctor: Doctor | int, queue_date: date = None) -> str:
-    """Generate queue number for doctor on given date. Format: D{doctor_id}-{sequence}"""
+    """Generate queue number for doctor on given date. Format: {initials} {sequence} e.g. 'US 001'"""
     if queue_date is None:
         queue_date = timezone.localdate()
-    
+
     if isinstance(doctor, int):
         try:
             doctor_obj = Doctor.objects.get(id=doctor)
-            doctor_id = doctor_obj.id
         except Doctor.DoesNotExist:
             return ""
     else:
-        doctor_id = doctor.id
-    
-    last_sequence = Appointment.objects.filter(
-        doctor_id=doctor_id,
+        doctor_obj = doctor
+
+    initials = _get_doctor_initials(doctor_obj)
+
+    appointments = Appointment.objects.filter(
+        doctor_id=doctor_obj.id,
         scheduled_at__date=queue_date
-    ).aggregate(last=Max("queue_number"))["last"]
-    
-    if last_sequence:
-        try:
-            parts = last_sequence.split("-")
-            if len(parts) == 2 and parts[0].startswith(f"D{doctor_id}"):
-                last_num = int(parts[1])
-                next_num = last_num + 1
-            else:
-                next_num = 1
-        except (ValueError, IndexError):
-            next_num = 1
-    else:
-        next_num = 1
-    
-    return f"D{doctor_id}-{next_num:03d}"
+    ).values_list("queue_number", flat=True)
+
+    max_sequence = 0
+    for qn in appointments:
+        if not qn:
+            continue
+        if " " in qn:
+            parts = qn.split(" ", 1)
+            if len(parts) == 2:
+                try:
+                    seq = int(parts[1])
+                    max_sequence = max(max_sequence, seq)
+                except ValueError:
+                    pass
+        elif qn.startswith("D") and "-" in qn:
+            parts = qn.split("-")
+            if len(parts) == 2:
+                try:
+                    seq = int(parts[1])
+                    max_sequence = max(max_sequence, seq)
+                except ValueError:
+                    pass
+
+    next_num = max_sequence + 1
+    return f"{initials} {next_num:03d}"
 
 
 def validate_appointment_datetime(scheduled_at):

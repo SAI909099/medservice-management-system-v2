@@ -11,7 +11,7 @@ from .selectors import (
     get_treatment_room_patient_rows,
 )
 from .serializers import ChargeSerializer, PaymentSerializer, ReceiptSerializer, ServiceOptionSerializer, ServiceSerializer
-from .services import apply_patient_payment, apply_treatment_patient_payment, create_daily_treatment_room_charges
+from .services import apply_patient_payment, apply_treatment_patient_payment, create_daily_treatment_room_charges, recalculate_charge
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
@@ -73,13 +73,15 @@ class ChargeViewSet(viewsets.ModelViewSet):
     def get_allowed_roles(self, request):
         if self.action in {"treatment_room", "generate_treatment_daily", "treatment_pay", "treatment_pay_by_patient"}:
             return ["admin", "registrator", "cashier", "treatment_staff", "doctor"]
-        if self.action in {"pay_by_patient"}:
+        if self.action in {"pay_by_patient", "cancel_item", "cancelled_items", "patients_with_charges"}:
             return ["admin", "registrator", "cashier"]
         return ["admin", "registrator", "cashier"]
 
     def get_required_page(self, request):
         if self.action in {"treatment_room", "generate_treatment_daily", "treatment_pay", "treatment_pay_by_patient"}:
             return "treatment"
+        if self.action in {"cancel_item", "cancelled_items", "patients_with_charges"}:
+            return "cancels"
         return "billing"
 
     @decorators.action(detail=False, methods=["get"], url_path="treatment-room")
@@ -93,11 +95,7 @@ class ChargeViewSet(viewsets.ModelViewSet):
             today_only=(today == "1"),
             treatment_state=treatment_state,
         )
-        page = self.paginate_queryset(data)
-        items = page if page is not None else data
-        if page is not None:
-            return self.get_paginated_response(items)
-        return response.Response({"results": items})
+        return response.Response({"results": data})
 
     @decorators.action(detail=False, methods=["post"], url_path="generate-treatment-daily")
     def generate_treatment_daily(self, request):
@@ -208,6 +206,170 @@ class ChargeViewSet(viewsets.ModelViewSet):
             return response.Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return response.Response(result)
+
+    @decorators.action(detail=True, methods=["post"], url_path="cancel-item")
+    def cancel_item(self, request, pk=None):
+        from django.utils import timezone
+        from reports.models import Expense
+
+        try:
+            charge = self.get_queryset().get(pk=pk)
+        except Charge.DoesNotExist:
+            return response.Response({"detail": "Charge topilmadi."}, status=status.HTTP_404_NOT_FOUND)
+
+        charge_item_id = request.data.get("charge_item_id")
+        cancel_note = request.data.get("note", "")
+
+        if not charge_item_id:
+            return response.Response({"detail": "charge_item_id kiritilishi shart."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            charge_item = charge.items.get(pk=charge_item_id)
+        except charge.items.model.DoesNotExist:
+            return response.Response({"detail": "ChargeItem topilmadi."}, status=status.HTTP_404_NOT_FOUND)
+
+        if charge_item.is_cancelled:
+            return response.Response({"detail": "Bu xizmat allaqachon bekor qilingan."}, status=status.HTTP_400_BAD_REQUEST)
+
+        charge_item.is_cancelled = True
+        charge_item.cancel_note = cancel_note
+        charge_item.cancelled_at = timezone.now()
+        charge_item.save(update_fields=["is_cancelled", "cancel_note", "cancelled_at"])
+
+        refund_amount = charge_item.total_price
+        paid_for_item = min(charge.paid_amount, charge_item.total_price) if charge.paid_amount > 0 else Decimal("0.00")
+
+        if paid_for_item > 0:
+            clinic = charge.patient.clinic
+            branch = charge.patient.branch
+            if clinic is None:
+                from clinics.models import Clinic
+                clinic = Clinic.objects.first()
+
+            Expense.objects.create(
+                clinic=clinic,
+                branch=branch,
+                category="Qaytarish (Refund)",
+                description=f"Qaytarish: {charge.patient.first_name} {charge.patient.last_name} - {charge_item.description}",
+                note=cancel_note or f"Charge #{charge.id}, ChargeItem #{charge_item.id}",
+                amount=paid_for_item,
+                payment_method=Expense.PaymentMethod.CASH,
+                source=Expense.Source.CASH_REGISTER,
+                created_by=request.user,
+                spent_at=timezone.localdate(),
+            )
+
+            charge.paid_amount = max(charge.paid_amount - paid_for_item, Decimal("0.00"))
+
+        recalculate_charge(charge)
+
+        return response.Response({
+            "detail": "Xizmat bekor qilindi.",
+            "charge_item_id": charge_item.id,
+            "description": charge_item.description,
+            "refund_amount": float(paid_for_item),
+            "charge_id": charge.id,
+            "charge_status": charge.status,
+        })
+
+    @decorators.action(detail=False, methods=["get"], url_path="patients-with-charges")
+    def patients_with_charges(self, request):
+        from django.db.models import Q
+        from patients.models import Patient
+
+        search = request.query_params.get("search", "").strip()
+
+        charges = Charge.objects.filter(
+            items__is_cancelled=False
+        ).select_related("patient").prefetch_related("items").distinct()
+
+        if search:
+            charges = charges.filter(
+                Q(patient__first_name__icontains=search) |
+                Q(patient__last_name__icontains=search)
+            )
+
+        patient_map = {}
+        for charge in charges:
+            pid = charge.patient_id
+            if pid not in patient_map:
+                p = charge.patient
+                patient_map[pid] = {
+                    "patient": {
+                        "id": p.id,
+                        "first_name": p.first_name,
+                        "last_name": p.last_name,
+                        "full_name": f"{p.first_name} {p.last_name}".strip(),
+                    },
+                    "charges": [],
+                }
+            patient_data = ChargeSerializer(charge).data
+            active_items = [i for i in patient_data["items"] if not i.get("is_cancelled")]
+            if active_items:
+                patient_data["items"] = active_items
+                patient_map[pid]["charges"].append(patient_data)
+
+        results = [v for v in patient_map.values() if v["charges"]]
+        results.sort(key=lambda x: x["patient"]["first_name"])
+
+        return response.Response({"results": results})
+
+    @decorators.action(detail=False, methods=["get"], url_path="cancelled-items")
+    def cancelled_items(self, request):
+        from datetime import date
+        from django.utils import timezone
+        from django.db.models import Sum, F, Value
+        from django.db.models.functions import Coalesce, Concat
+
+        year = int(request.query_params.get("year", timezone.now().year))
+        month = int(request.query_params.get("month", timezone.now().month))
+
+        start_date = date(year, month, 1)
+        if month == 12:
+            end_date = date(year + 1, 1, 1)
+        else:
+            end_date = date(year, month + 1, 1)
+
+        cancelled_items = (
+            ChargeItem.objects.filter(
+                is_cancelled=True,
+                cancelled_at__gte=start_date,
+                cancelled_at__lt=end_date,
+            )
+            .select_related("charge", "charge__patient", "service")
+            .order_by("-cancelled_at")
+        )
+
+        from reports.models import Expense
+        refunds = Expense.objects.filter(
+            category="Qaytarish (Refund)",
+            spent_at__gte=start_date,
+            spent_at__lt=end_date,
+        )
+        total_refunded = refunds.aggregate(total=Coalesce(Sum("amount"), Decimal("0")))["total"]
+
+        items = []
+        for item in cancelled_items:
+            patient = item.charge.patient
+            items.append({
+                "id": item.id,
+                "charge_id": item.charge_id,
+                "patient_id": patient.id,
+                "patient_name": f"{patient.first_name} {patient.last_name}".strip(),
+                "service_name": item.service.name if item.service else item.description,
+                "description": item.description,
+                "total_price": float(item.total_price),
+                "cancel_note": item.cancel_note,
+                "cancelled_at": item.cancelled_at.isoformat() if item.cancelled_at else None,
+            })
+
+        return response.Response({
+            "year": year,
+            "month": month,
+            "total_refunded": float(total_refunded),
+            "count": len(items),
+            "items": items,
+        })
 
 
 class PaymentViewSet(viewsets.ModelViewSet):

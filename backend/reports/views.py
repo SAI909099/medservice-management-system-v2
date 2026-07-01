@@ -89,6 +89,7 @@ class ServiceIncomeView(APIView):
             service__isnull=False,
             charge__created_at__date__gte=start_date,
             charge__created_at__date__lte=end_date,
+            is_cancelled=False,
         ).values(
             "service__id",
             "service__name",
@@ -217,3 +218,58 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         )
         )
         return response.Response({"results": list(rows)})
+
+    @decorators.action(detail=False, methods=["get"], url_path="cash-balance")
+    def cash_balance(self, request):
+        from decimal import Decimal
+        from billing.models import Payment
+        from django.db.models import Sum
+
+        today = timezone.localdate()
+        period = request.query_params.get("period", "today")
+        user = request.user
+
+        if period == "today":
+            start_date = today
+            end_date = today
+        elif period == "month":
+            start_date = today.replace(day=1)
+            end_date = today
+        else:
+            start_date = today
+            end_date = today
+
+        payment_qs = Payment.objects.filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
+        if not user.is_superuser:
+            clinic_id = getattr(user, "clinic_id", None)
+            branch_id = getattr(user, "branch_id", None)
+            if clinic_id:
+                payment_qs = payment_qs.filter(charge__patient__clinic_id=clinic_id)
+            if branch_id:
+                payment_qs = payment_qs.filter(charge__patient__branch_id=branch_id)
+
+        total_income = payment_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+
+        expense_qs = Expense.objects.filter(spent_at__gte=start_date, spent_at__lte=end_date)
+        if not user.is_superuser:
+            clinic_id = getattr(user, "clinic_id", None)
+            branch_id = getattr(user, "branch_id", None)
+            if clinic_id:
+                expense_qs = expense_qs.filter(clinic_id=clinic_id)
+            if branch_id:
+                expense_qs = expense_qs.filter(branch_id=branch_id)
+
+        total_expenses = expense_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+        total_refunds = expense_qs.filter(category="Qaytarish (Refund)").aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+        effective_income = total_income - total_refunds
+        cash_balance = effective_income - total_expenses
+
+        return response.Response({
+            "period": period,
+            "date_from": start_date,
+            "date_to": end_date,
+            "total_income": effective_income,
+            "total_expenses": total_expenses,
+            "total_refunds": total_refunds,
+            "cash_balance": cash_balance,
+        })

@@ -22,6 +22,8 @@ import { ServiceIncome } from './pages/ServiceIncome';
 import { ServiceQueue } from './pages/ServiceQueue';
 import { MRTQueue } from './pages/MRTQueue';
 import { DoctorSalaries } from './pages/DoctorSalaries';
+import { DoctorAppointmentSalaries } from './pages/DoctorAppointmentSalaries';
+import { CancelPage } from './pages/CancelPage';
 
 // Mock empty pages for links in sidebar
 function ComingSoon({ title }: { title: string }) {
@@ -112,7 +114,9 @@ function App() {
           <Route path="treatment" element={<ProtectedPage pageCode="treatment" element={<TreatmentRooms />} />} />
           <Route path="rooms" element={<ProtectedPage pageCode="treatment" element={<RoomsList />} />} />
           <Route path="treatment-billing" element={<ProtectedPage pageCode="treatment" element={<TreatmentRoomBilling />} />} />
-          <Route path="doctor-salaries" element={<ProtectedPage pageCode="reports" element={<DoctorSalaries />} />} />
+          <Route path="doctor-salaries" element={<ProtectedPage pageCode="doctor_salaries" element={<DoctorSalaries />} />} />
+          <Route path="doctor-appointment-salaries" element={<ProtectedPage pageCode="doctor_appointment_salaries" element={<DoctorAppointmentSalaries />} />} />
+          <Route path="cancels" element={<ProtectedPage pageCode="cancels" element={<CancelPage />} />} />
           <Route path="cash-register" element={<ProtectedPage pageCode="billing" element={<CashRegister />} />} />
           <Route path="billing" element={<ProtectedPage pageCode="billing" element={<Billing />} />} />
           <Route path="pricing" element={<ProtectedPage pageCode="pricing" element={<Pricing />} />} />

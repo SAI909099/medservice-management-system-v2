@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '@/lib/api';
 import { Paginated, ApiServiceOption } from '@/lib/types';
-import { printServiceQueueTickets } from '@/lib/serviceQueuePrinter';
+import { printCombinedReceipt, printServiceQueueTickets } from '@/lib/appointmentQueuePrinter';
 
 type DoctorOption = {
   id: number;
@@ -52,8 +52,7 @@ type ServiceQueueTicket = {
 };
 
 type RegistrationForm = {
-  first_name: string;
-  last_name: string;
+  full_name: string;
   gender: string;
   birth_year: string;
   phone: string;
@@ -77,8 +76,7 @@ function extractApiError(error: unknown): string {
 
 export function Appointments() {
   const [form, setForm] = useState<RegistrationForm>({
-    first_name: '',
-    last_name: '',
+    full_name: '',
     gender: '',
     birth_year: '',
     phone: '',
@@ -200,11 +198,26 @@ export function Appointments() {
       }
     });
 
-    try {
+try {
       const birthYearNum = form.birth_year ? Number(form.birth_year) : null;
+      
+      const nameParts = form.full_name.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : firstName;
+      
+      const genderValue = form.gender || null;
+      const phoneValue = form.phone || null;
+      const addressValue = form.address || null;
+      const complaintValue = form.reason || null;
+      const doctorValue = form.doctor ? Number(form.doctor) : null;
+      const referringDoctorValue = form.referring_doctor || null;
+      
       const registerRes = await apiRequest<{
         patient_id: number;
+        patient_birth_year: number | null;
         appointment_id: number | null;
+        queue_number: string;
+        doctor_name: string;
         created_charge_ids: number[];
         appointment_charge_total: string;
         service_charge_total: string;
@@ -213,35 +226,46 @@ export function Appointments() {
       }>('/appointments/register/', {
         method: 'POST',
         body: JSON.stringify({
-          first_name: form.first_name,
-          last_name: form.last_name,
-          gender: form.gender,
+          first_name: firstName,
+          last_name: lastName,
+          gender: genderValue,
           birth_year: birthYearNum,
-          phone: form.phone,
-          address: form.address,
-          complaint: form.reason,
-          doctor: form.doctor ? Number(form.doctor) : null,
-          referring_doctor: form.referring_doctor,
-          service_ids: form.service_ids,
-          service_options: serviceOptionsPayload,
+          phone: phoneValue,
+          address: addressValue,
+          complaint: complaintValue,
+          doctor: doctorValue,
+          referring_doctor: referringDoctorValue,
+          service_ids: form.service_ids.length > 0 ? form.service_ids : [],
+          service_options: serviceOptionsPayload.length > 0 ? serviceOptionsPayload : [],
         }),
       });
 
+      const queueMsg = registerRes.queue_number ? `, Navbat: ${registerRes.queue_number}` : '';
       setMessage(
-        `Ro'yxatga olindi. Qabul: ${Number(registerRes.appointment_charge_total).toLocaleString()} so'm, ` +
+        `Ro'yxatga olindi${queueMsg}. Qabul: ${Number(registerRes.appointment_charge_total).toLocaleString()} so'm, ` +
           `Xizmatlar: ${Number(registerRes.service_charge_total).toLocaleString()} so'm, ` +
           `Jami: ${Number(registerRes.grand_total).toLocaleString()} so'm (to'lanmagan).`,
       );
       setLastQueueTickets(registerRes.service_queue_tickets || []);
-      if (registerRes.service_queue_tickets?.length) {
-        const printed = printServiceQueueTickets(registerRes.service_queue_tickets);
-        if (!printed) {
-          setMessage((prev) => `${prev} Navbat cheki popup blok bo'lgani uchun chiqmay qoldi.`);
-        }
+
+      const printed = printCombinedReceipt({
+        doctor_queue: registerRes.queue_number ? {
+          queue_number: registerRes.queue_number,
+          patient_name: `${firstName} ${lastName}`.trim(),
+          doctor_name: registerRes.doctor_name || '',
+          amount: Number(registerRes.appointment_charge_total),
+          birth_year: registerRes.patient_birth_year,
+        } : undefined,
+        service_tickets: registerRes.service_queue_tickets?.map(t => ({
+          ...t,
+          birth_year: registerRes.patient_birth_year,
+        })),
+      });
+      if (!printed) {
+        setMessage((prev) => `${prev} Chek print qilinmadi (popup blok).`);
       }
       setForm({
-        first_name: '',
-        last_name: '',
+        full_name: '',
         gender: '',
         birth_year: '',
         phone: '',
@@ -283,10 +307,9 @@ export function Appointments() {
 
       <form onSubmit={submitRegistration} className="bg-white rounded-lg border border-gray-200 shadow p-4 space-y-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <input className="border rounded px-3 py-2" placeholder="Ism" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
-          <input className="border rounded px-3 py-2" placeholder="Familiya" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
-          <select className="border rounded px-3 py-2" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} required>
-            <option value="">Jinsini tanlang</option>
+          <input className="border rounded px-3 py-2 md:col-span-2" placeholder="FIO (To'liq ism)" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required />
+          <select className="border rounded px-3 py-2" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+            <option value="">Jins (ixtiyoriy)</option>
             <option value="erkak">Erkak</option>
             <option value="ayol">Ayol</option>
           </select>
@@ -295,13 +318,13 @@ export function Appointments() {
             type="number"
             min={1900}
             max={new Date().getFullYear()}
-            placeholder="Tug'ilgan yili (masalan: 1998)"
+            placeholder="Tug'ilgan yili (ixtiyoriy)"
             value={form.birth_year}
             onChange={(e) => setForm({ ...form, birth_year: e.target.value })}
           />
-          <input className="border rounded px-3 py-2" placeholder="Telefon raqam" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
-          <input className="border rounded px-3 py-2 md:col-span-2" placeholder="Manzil" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-          <textarea className="border rounded px-3 py-2 md:col-span-2" placeholder="Tashrif sababi" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+          <input className="border rounded px-3 py-2 md:col-span-2" placeholder="Telefon raqam (ixtiyoriy)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          <input className="border rounded px-3 py-2 md:col-span-2" placeholder="Manzil (ixtiyoriy)" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+          <textarea className="border rounded px-3 py-2 md:col-span-2" placeholder="Tashrif sababi (ixtiyoriy)" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
           <select className="border rounded px-3 py-2" value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}>
             <option value="">Shifokorsiz (faqat xizmat)</option>
             <optgroup label="Shifokorlar">

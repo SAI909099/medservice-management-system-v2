@@ -42,7 +42,7 @@ def get_treatment_room_queryset(user) -> QuerySet:
                 distinct=True,
             )
         )
-        .order_by("area__name", "name")
+        .order_by("area__name", "room_number", "name")
     )
     return _scoped_queryset(queryset, user)
 

@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from rest_framework import decorators, response, viewsets
+from rest_framework.permissions import IsAuthenticated
 
 from accounts.permissions import PageAccessPermission, RoleBasedPermission
 
@@ -28,6 +31,7 @@ class TreatmentRoomViewSet(viewsets.ModelViewSet):
     required_page = "treatment"
     allowed_roles = ["admin", "treatment_staff", "registrator"]
     filterset_fields = ["clinic", "branch", "area", "is_active"]
+    pagination_class = None
 
     def get_queryset(self):
         return get_treatment_room_queryset(self.request.user)
@@ -56,3 +60,58 @@ class TreatmentReferralViewSet(viewsets.ModelViewSet):
             for patient in queryset
         ]
         return response.Response({"results": data})
+
+    @decorators.action(detail=True, methods=["post"], url_path="move", permission_classes=[IsAuthenticated])
+    def move(self, request, pk=None):
+        from django.utils import timezone
+        from decimal import Decimal
+
+        try:
+            old_referral = self.get_queryset().get(pk=pk)
+        except self.get_queryset().model.DoesNotExist:
+            return response.Response({"detail": "Referral topilmadi."}, status=404)
+
+        if old_referral.status != "in_progress":
+            return response.Response({"detail": "Faqat active referral ko'chirilishi mumkin."}, status=400)
+
+        new_room_id = request.data.get("room")
+        if not new_room_id:
+            return response.Response({"detail": "room kiritilishi shart."}, status=400)
+
+        from .models import TreatmentRoom
+        try:
+            new_room = TreatmentRoom.objects.get(pk=new_room_id)
+        except TreatmentRoom.DoesNotExist:
+            return response.Response({"detail": "Yangi xona topilmadi."}, status=404)
+
+        today = timezone.localdate()
+
+        old_referral.status = "completed"
+        old_referral.save(update_fields=["status"])
+
+        new_referral = TreatmentReferral.objects.create(
+            patient=old_referral.patient,
+            room=new_room,
+            doctor=old_referral.doctor,
+            service_name=old_referral.service_name,
+            status="in_progress",
+            notes=f"Ko'chirildi: {old_referral.room.name} -> {new_room.name}",
+        )
+
+        current_local_time = timezone.localtime().time().replace(microsecond=0)
+        new_referral.created_at = timezone.make_aware(
+            datetime.combine(today, current_local_time),
+            timezone.get_current_timezone(),
+        )
+        new_referral.save(update_fields=["created_at"])
+
+        from billing.services import create_treatment_charges_for_referral_period
+        create_treatment_charges_for_referral_period(new_referral, start_date=today, end_date=today)
+
+        return response.Response({
+            "detail": "Bemor muvaffaqiyatli ko'chirildi.",
+            "old_referral_id": old_referral.id,
+            "new_referral_id": new_referral.id,
+            "from_room": old_referral.room.name,
+            "to_room": new_room.name,
+        })

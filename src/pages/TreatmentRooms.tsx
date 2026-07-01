@@ -14,6 +14,7 @@ interface TreatmentArea {
 interface TreatmentRoom {
   id: number;
   name: string;
+  room_number: number;
   clinic: number;
   branch: number | null;
   area: number | null;
@@ -85,6 +86,7 @@ export function TreatmentRooms() {
 
   const [selectedAreaId, setSelectedAreaId] = useState('');
   const [roomName, setRoomName] = useState('');
+  const [roomNumber, setRoomNumber] = useState('0');
   const [roomCapacity, setRoomCapacity] = useState('1');
   const [dailyPrice, setDailyPrice] = useState('0');
   const [roomSubmitting, setRoomSubmitting] = useState(false);
@@ -100,17 +102,17 @@ export function TreatmentRooms() {
 
   const loadData = async () => {
     const [areasRes, roomsRes, referralsRes, clinicsRes, branchesRes] = await Promise.all([
-      apiRequest<Paginated<TreatmentArea>>('/treatment-areas/'),
-      apiRequest<Paginated<TreatmentRoom>>('/treatment-rooms/'),
-      apiRequest<Paginated<TreatmentReferral>>('/treatment-referrals/'),
-      apiRequest<Paginated<ClinicOption>>('/clinics/'),
-      apiRequest<Paginated<BranchOption>>('/branches/'),
+      apiRequest<TreatmentArea[] | Paginated<TreatmentArea>>('/treatment-areas/'),
+      apiRequest<TreatmentRoom[] | Paginated<TreatmentRoom>>('/treatment-rooms/'),
+      apiRequest<TreatmentReferral[] | Paginated<TreatmentReferral>>('/treatment-referrals/'),
+      apiRequest<ClinicOption[] | Paginated<ClinicOption>>('/clinics/'),
+      apiRequest<BranchOption[] | Paginated<BranchOption>>('/branches/'),
     ]);
-    setAreas(areasRes.results || []);
-    setRooms(roomsRes.results || []);
-    setReferrals(referralsRes.results || []);
-    setClinics(clinicsRes.results || []);
-    setBranches(branchesRes.results || []);
+    setAreas(Array.isArray(areasRes) ? areasRes : areasRes.results || []);
+    setRooms(Array.isArray(roomsRes) ? roomsRes : roomsRes.results || []);
+    setReferrals(Array.isArray(referralsRes) ? referralsRes : referralsRes.results || []);
+    setClinics(Array.isArray(clinicsRes) ? clinicsRes : clinicsRes.results || []);
+    setBranches(Array.isArray(branchesRes) ? branchesRes : branchesRes.results || []);
   };
 
   useEffect(() => {
@@ -165,6 +167,7 @@ export function TreatmentRooms() {
         body: JSON.stringify({
           area: Number(selectedAreaId),
           name: roomName.trim(),
+          room_number: Number(roomNumber || '0'),
           capacity: Number(roomCapacity || '1'),
           daily_price: dailyPrice || '0',
           clinic: effectiveClinicId,
@@ -172,6 +175,7 @@ export function TreatmentRooms() {
         }),
       });
       setRoomName('');
+      setRoomNumber('0');
       setRoomCapacity('1');
       setDailyPrice('0');
       setSelectedAreaId('');
@@ -276,6 +280,16 @@ export function TreatmentRooms() {
             value={roomName}
             onChange={(e) => setRoomName(e.target.value)}
             placeholder="Xona nomi (masalan: 201, VIP-1)"
+            required
+          />
+          <input
+            className="w-full rounded border px-3 py-2"
+            type="number"
+            min="0"
+            step="1"
+            value={roomNumber}
+            onChange={(e) => setRoomNumber(e.target.value)}
+            placeholder="Xona raqami (saralash uchun)"
             required
           />
           <input

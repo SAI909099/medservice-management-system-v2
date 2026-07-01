@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from rest_framework import serializers
 from django.utils import timezone
 from datetime import datetime
@@ -114,8 +116,18 @@ class TreatmentReferralSerializer(serializers.ModelSerializer):
             referral.created_at = assigned_dt
             referral.save(update_fields=["created_at"])
         if referral.status == TreatmentReferral.Status.IN_PROGRESS:
+            from billing.models import Charge
             from billing.services import create_treatment_charges_for_referral_period
 
             start_date = assigned_date or timezone.localdate()
-            create_treatment_charges_for_referral_period(referral, start_date=start_date, end_date=timezone.localdate())
+            today = timezone.localdate()
+            has_today_charge = Charge.objects.filter(
+                patient=referral.patient,
+                treatment_charge_date=today,
+            ).exists()
+            if has_today_charge:
+                if start_date < today:
+                    create_treatment_charges_for_referral_period(referral, start_date=start_date, end_date=today - timedelta(days=1))
+            else:
+                create_treatment_charges_for_referral_period(referral, start_date=start_date, end_date=today)
         return referral

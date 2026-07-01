@@ -10,6 +10,7 @@ class Doctor(models.Model):
     license_number = models.CharField(max_length=50, blank=True)
     is_active = models.BooleanField(default=True)
     salary_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=30, help_text="Treatment revenue share percentage (%)")
+    appointment_salary_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=30, help_text="Appointment revenue share percentage (%)")
 
     def __str__(self) -> str:
         return f"Dr. {self.user.get_full_name() or self.user.username}"
